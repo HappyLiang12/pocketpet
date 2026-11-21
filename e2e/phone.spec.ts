@@ -156,6 +156,73 @@ test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
   await expect(page.locator("#install-hint")).toBeHidden();
 });
 
+test("opens and collapses the sheet from a 44px handle", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  const sheet = page.locator("#sheet");
+  const handle = page.locator("#sheet-handle");
+  await expect(sheet).toHaveAttribute("data-open", "false");
+  const box = await handle.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThanOrEqual(44);
+  expect(box!.height).toBeGreaterThanOrEqual(44);
+  // y=6 is inside the 44px button but outside the 4px visual bar at its centre.
+  await handle.click({ position: { x: 22, y: 6 } });
+  await expect(sheet).toHaveAttribute("data-open", "true");
+  await handle.click({ position: { x: 22, y: 6 } });
+  await expect(sheet).toHaveAttribute("data-open", "false");
+
+  // Escape collapses and returns focus to the handle.
+  await handle.click({ position: { x: 22, y: 6 } });
+  await expect(sheet).toHaveAttribute("data-open", "true");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveAttribute("data-open", "false");
+  await expect(handle).toBeFocused();
+});
+
+test("boots when accessing window.localStorage throws", async ({ page }) => {
+  await setHostLook({ activePet: "local:testpet" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Some browsers throw on the window.localStorage getter itself, not only on
+  // the Storage methods, so the app must resolve storage inside a try block.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("Storage access denied", "SecurityError");
+      },
+    });
+  });
+  await page.goto(`/?token=${TOKEN}`);
+  // Clock, connection and host values still render; module load did not abort.
+  await expect(page.locator("#stage [data-time]")).toHaveText(/^\d{2}:\d{2}$/);
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await openTab(page, "about");
+  await expect(page.locator("#debug-host")).toHaveText(/^(macOS|Windows|Linux) \S+/);
+  await openTab(page, "look");
+  await expect(page.locator("#follow-host")).toBeChecked();
+  await expect(page.locator("#look-storage")).toBeVisible();
+});
+
+test("falls back to the host pet when a saved local pet is missing", async ({ page }) => {
+  await setHostLook({ activePet: "local:testpet" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    localStorage.setItem("pocketpet.look", JSON.stringify({
+      v: 1,
+      followHost: false,
+      overrides: {},
+      petId: "local:deleted-pet",
+    }));
+  });
+  await page.goto(`/?token=${TOKEN}`);
+  // The missing saved pet resolves to the host pet, not the first gallery row.
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet");
+  await openTab(page, "look");
+  await expect(page.locator("#look-note")).toBeVisible();
+  await expect(page.locator("#look-summary")).toContainText("Test Pet");
+});
+
 test("keeps booting and dismisses the hint when storage is denied", async ({ page }) => {
   await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -260,8 +327,9 @@ test("applies host appearance and can reset this phone", async ({ page }) => {
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
-  const scale = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
-  expect(scale).toBe("1.4");
+  await expect.poll(
+    () => page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim()),
+  ).toBe("1.4");
   await openTab(page, "look");
   await expect(page.locator("#follow-host")).toBeChecked();
   await expect(page.locator("#open-studio")).toBeDisabled();

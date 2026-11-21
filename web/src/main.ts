@@ -79,10 +79,13 @@ const renderer = new PetRenderer(stage.pet);
 renderer.start();
 
 const connEl = byId("conn");
+const connText = byId("conn-text");
 const chipsEl = byId("chips");
 const sessionsEl = byId("sessions");
 const sheet = byId<HTMLElement>("sheet");
+const scrim = byId<HTMLElement>("scrim");
 const sheetHandle = byId<HTMLButtonElement>("sheet-handle");
+const tabList = byId<HTMLElement>("sheet-tabs");
 const tabs = [...document.querySelectorAll<HTMLButtonElement>("#sheet-tabs [data-tab]")];
 const panels = [...document.querySelectorAll<HTMLElement>("[data-panel]")];
 const followHost = byId<HTMLInputElement>("follow-host");
@@ -91,6 +94,7 @@ const openStudioButton = byId<HTMLButtonElement>("open-studio");
 const resetLookButton = byId<HTMLButtonElement>("reset-look");
 const lookSummary = byId<HTMLElement>("look-summary");
 const lookSource = byId<HTMLElement>("look-source");
+const lookNote = byId<HTMLElement>("look-note");
 const lookStorageNotice = byId<HTMLElement>("look-storage");
 const openLookButton = byId<HTMLButtonElement>("open-look");
 const liveConnection = byId<HTMLElement>("live-connection");
@@ -118,6 +122,9 @@ const debugLang = byId("debug-lang");
 
 let current: Snapshot | null = null;
 let pets: PetSummary[] = [];
+let petsLoad: Promise<void> | null = null;
+let renderedPetIds: string[] = [];
+let renderedPetFilter = "";
 let petId: string | null = null;
 let lang: Lang = "en";
 let connStatus: ConnStatus = "connecting";
@@ -167,7 +174,12 @@ function currentAppearance(): Appearance {
 
 function currentPetId(): string | null {
   if (localLook.followHost) return hostPet;
-  return localLook.petId ?? hostPet;
+  const localId = localLook.petId;
+  if (!localId) return hostPet;
+  // A saved pet that disappeared from the catalog falls back to the host pet
+  // rather than silently picking the first gallery entry.
+  if (pets.length > 0 && !pets.some((candidate) => candidate.id === localId)) return hostPet;
+  return localId;
 }
 
 function saveLocal(next: LocalLook): void {
@@ -179,15 +191,26 @@ function saveLocal(next: LocalLook): void {
 function showTab(name: TabName, open = true): void {
   activeTab = name;
   sheet.dataset.open = open ? "true" : "false";
+  scrim.dataset.visible = open ? "true" : "false";
   sheetHandle.setAttribute("aria-expanded", String(open));
   sheetHandle.setAttribute("aria-label", t(lang, open ? "sheet.close" : "sheet.open"));
-  for (const tab of tabs) tab.setAttribute("aria-selected", String(tab.dataset.tab === name));
+  for (const tab of tabs) {
+    const selected = tab.dataset.tab === name;
+    tab.setAttribute("aria-selected", String(selected));
+    // Roving tabindex: only the active tab is in the Tab order.
+    tab.tabIndex = selected ? 0 : -1;
+  }
   for (const panel of panels) panel.hidden = panel.dataset.panel !== name;
 }
 
+function closeSheet(): void {
+  showTab("live", false);
+  sheetHandle.focus();
+}
+
 function toggleSheet(): void {
-  const open = sheet.dataset.open !== "true";
-  showTab("live", open);
+  if (sheet.dataset.open === "true") closeSheet();
+  else showTab("live", true);
 }
 
 function phaseLabel(phase: string): string {
@@ -231,35 +254,60 @@ function renderSessions(appearance: Appearance): void {
   }));
 }
 
-async function loadPets(): Promise<void> {
-  try {
-    const response = await fetch("/api/pets");
-    if (!response.ok) return;
-    const data = (await response.json()) as { pets: PetSummary[] };
-    pets = data.pets;
-    renderPetList();
-  } catch {
-    return;
-  }
+// The initial /api/state snapshot and the first WS snapshot can both arrive
+// before the catalog resolves; share one request/result instead of fetching
+// /api/pets twice. A failed load clears the cache so a later snapshot retries.
+function loadPets(): Promise<void> {
+  if (petsLoad) return petsLoad;
+  petsLoad = (async () => {
+    try {
+      const response = await fetch("/api/pets");
+      if (!response.ok) {
+        petsLoad = null;
+        return;
+      }
+      const data = (await response.json()) as { pets: PetSummary[] };
+      pets = data.pets;
+      renderPetList();
+    } catch {
+      petsLoad = null;
+    }
+  })();
+  return petsLoad;
+}
+
+function createPetOption(pet: PetSummary): HTMLLabelElement {
+  const label = document.createElement("label");
+  label.className = "pet-option";
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = "pet";
+  input.value = pet.id;
+  input.addEventListener("change", () => { selectPet(pet.id); });
+  const name = document.createElement("span");
+  name.textContent = pet.name;
+  label.append(input, name);
+  return label;
 }
 
 function renderPetList(): void {
   petList.setAttribute("role", "radiogroup");
   petList.setAttribute("aria-label", t(lang, "look.pet"));
-  petList.replaceChildren(...filterPets(pets, petSearch.value).map((pet) => {
-    const label = document.createElement("label");
-    label.className = "pet-option";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "pet";
-    input.value = pet.id;
-    input.checked = pet.id === currentPetId();
-    input.addEventListener("change", () => { selectPet(pet.id); });
-    const name = document.createElement("span");
-    name.textContent = pet.name;
-    label.append(input, name);
-    return label;
-  }));
+  const visible = filterPets(pets, petSearch.value);
+  const ids = visible.map((pet) => pet.id);
+  const filterChanged = petSearch.value !== renderedPetFilter;
+  const listChanged = ids.length !== renderedPetIds.length || ids.some((id, index) => id !== renderedPetIds[index]);
+  if (filterChanged || listChanged) {
+    petList.replaceChildren(...visible.map(createPetOption));
+    renderedPetIds = ids;
+    renderedPetFilter = petSearch.value;
+  }
+  // Snapshots and local changes only update the checked state; the rows (and
+  // focus) survive instead of being rebuilt on every render.
+  const selected = currentPetId();
+  for (const input of petList.querySelectorAll<HTMLInputElement>('input[name="pet"]')) {
+    input.checked = input.value === selected;
+  }
 }
 
 function selectPet(id: string): void {
@@ -278,12 +326,22 @@ function renderLook(appearance: Appearance): void {
   lookSource.textContent = localLook.followHost ? t(lang, "look.hostDefault") : t(lang, "look.custom");
   petSearch.placeholder = t(lang, "look.search");
   petSearch.setAttribute("aria-label", t(lang, "look.search"));
-  const selectedPet = pets.find((candidate) => candidate.id === currentPetId());
+  const selectedId = currentPetId();
+  const selectedPet = selectedId ? pets.find((candidate) => candidate.id === selectedId) : undefined;
+  const localMissing = !localLook.followHost
+    && localLook.petId !== null
+    && pets.length > 0
+    && !pets.some((candidate) => candidate.id === localLook.petId);
+  lookNote.hidden = !localMissing;
+  lookNote.textContent = t(lang, "look.localMissing");
+  const petValue = selectedPet?.name
+    ?? selectedId
+    ?? (pets.length === 0 ? t(lang, "look.noPets") : t(lang, "look.notSelected"));
   const summary: Array<[string, string]> = [
     [t(lang, "look.clock"), `${appearance.clock.scale}%`],
     [t(lang, "look.petSize"), `${appearance.pet.scale}%`],
     [t(lang, "look.layout"), `${appearance.layout.mode} · ${appearance.layout.gap}`],
-    [t(lang, "look.pet"), selectedPet?.name ?? currentPetId() ?? t(lang, "look.noPets")],
+    [t(lang, "look.pet"), petValue],
   ];
   lookSummary.replaceChildren(...summary.flatMap(([term, value]) => {
     const dt = document.createElement("dt");
@@ -302,12 +360,15 @@ function renderLook(appearance: Appearance): void {
 
 let applyToken = 0;
 
-async function applyPet(id: string | null): Promise<void> {
+async function applyPet(requested: string | null): Promise<void> {
   const token = ++applyToken;
   const hadPets = pets.length > 0;
   if (!hadPets) await loadPets();
   if (token !== applyToken) return;
-  const pet = pets.find((candidate) => candidate.id === id) ?? pets[0];
+  // Re-resolve after the catalog loads so a missing local pet falls back to the
+  // host pet; never pick the first gallery entry on its behalf.
+  const id = requested && pets.some((candidate) => candidate.id === requested) ? requested : currentPetId();
+  const pet = id ? pets.find((candidate) => candidate.id === id) : undefined;
   if (pet && pet.id === petId && stage.stage.dataset.petReady === "true") return;
   petId = pet?.id ?? null;
   stage.stage.dataset.petId = pet?.id ?? "fallback";
@@ -404,7 +465,7 @@ function setupInstallHint(): void {
 }
 
 function renderConnection(): void {
-  connEl.textContent = t(lang, CONN_KEYS[connStatus]);
+  connText.textContent = t(lang, CONN_KEYS[connStatus]);
   connEl.dataset.state = connStatus;
 }
 
@@ -482,9 +543,26 @@ function boot(): void {
   followHost.addEventListener("change", () => setFollowHost(followHost.checked));
   resetLookButton.addEventListener("click", () => saveLocal({ v: 1, followHost: true, overrides: {}, petId: null }));
   tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab as TabName)));
+  tabList.addEventListener("keydown", (event) => {
+    const index = tabs.findIndex((tab) => tab.dataset.tab === activeTab);
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const target = tabs[next];
+    if (!target) return;
+    showTab(target.dataset.tab as TabName);
+    target.focus();
+  });
   sheetHandle.addEventListener("click", toggleSheet);
+  scrim.addEventListener("click", closeSheet);
   openLookButton.addEventListener("click", () => showTab("look"));
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape") showTab("live", false); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && sheet.dataset.open === "true") closeSheet();
+  });
   petSearch.addEventListener("input", renderPetList);
   langSelect.addEventListener("change", () => {
     const value = langSelect.value;
