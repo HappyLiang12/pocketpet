@@ -30,7 +30,7 @@
     "build": "npm run build:web && npm run build:bridge",
     "dev": "tsx src/cli.ts run",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json",
     "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {

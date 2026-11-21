@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_APPEARANCE, normalizeAppearance, type Appearance } from "./appearance.js";
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -22,6 +23,7 @@ export type Config = {
   activePet: string | null;
   sleepAfterMinutes: number;
   quietHours: QuietHours | null;
+  appearance: Appearance;
 };
 
 export function pocketpetHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -43,6 +45,7 @@ export function ensureConfig(home: string, env: NodeJS.ProcessEnv = process.env)
     activePet: null,
     sleepAfterMinutes: 10,
     quietHours: null,
+    appearance: normalizeAppearance(DEFAULT_APPEARANCE),
   };
   saveConfig(home, config);
   return config;
@@ -59,6 +62,7 @@ export function loadConfig(home: string): Config {
     activePet: parsed.activePet ?? null,
     sleepAfterMinutes: parsed.sleepAfterMinutes ?? 10,
     quietHours: parsed.quietHours ?? null,
+    appearance: normalizeAppearance(parsed.appearance),
   };
 }
 
