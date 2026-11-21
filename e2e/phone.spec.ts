@@ -39,6 +39,12 @@ test("loads the active pet sprite and switches pets from the drawer", async ({ p
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
 });
 
+test("shows a localized wake-lock status", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("#wake-info")).toHaveText(/^螢幕長亮：(已啟用|待命|已拒絕|不支援|非安全連線.*)$/);
+});
+
 test("falls back to the blob when a pet spritesheet cannot decode", async ({ page }) => {
   await fetch(`http://127.0.0.1:7799/api/active-pet?token=${TOKEN}`, {
     method: "PUT",

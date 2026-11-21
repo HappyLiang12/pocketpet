@@ -1,29 +1,81 @@
 export type WakeStatus = "active" | "unsupported" | "denied" | "insecure" | "idle";
 
-export function keepAwake(onChange: (status: WakeStatus) => void): () => void {
-  let sentinel: WakeLockSentinel | null = null;
-  let disposed = false;
+export const WAKE_LABELS: Record<WakeStatus, string> = {
+  active: "已啟用",
+  idle: "待命",
+  denied: "已拒絕",
+  unsupported: "不支援",
+  insecure: "非安全連線，請設定螢幕逾時",
+};
 
-  const acquire = async (): Promise<void> => {
-    if (disposed) return;
-    if (!window.isSecureContext) { onChange("insecure"); return; }
-    if (!("wakeLock" in navigator)) { onChange("unsupported"); return; }
-    try {
-      sentinel = await navigator.wakeLock.request("screen");
-      onChange("active");
-      sentinel.addEventListener("release", () => { sentinel = null; if (!disposed) onChange("idle"); });
-    } catch {
-      onChange("denied");
-    }
+interface WakeLockSentinelLike {
+  release(): Promise<void>;
+  addEventListener(type: "release", listener: () => void): void;
+}
+
+interface WakeLockLike {
+  request(type: "screen"): Promise<WakeLockSentinelLike>;
+}
+
+export interface WakeEnvironment {
+  win: {
+    isSecureContext: boolean;
+    navigator: { wakeLock?: WakeLockLike };
+  };
+  doc: {
+    visibilityState: DocumentVisibilityState;
+    addEventListener(type: "visibilitychange", listener: () => void): void;
+    removeEventListener(type: "visibilitychange", listener: () => void): void;
+  };
+}
+
+export function keepAwake(
+  onChange: (status: WakeStatus) => void,
+  env: WakeEnvironment = { win: window, doc: document },
+): () => void {
+  let sentinel: WakeLockSentinelLike | null = null;
+  let disposed = false;
+  let acquiring = false;
+
+  const acquire = (): void => {
+    if (disposed || sentinel || acquiring) return;
+    if (!env.win.isSecureContext) { onChange("insecure"); return; }
+    const wakeLock = env.win.navigator.wakeLock;
+    if (!wakeLock) { onChange("unsupported"); return; }
+
+    acquiring = true;
+    void (async () => {
+      try {
+        const acquired = await wakeLock.request("screen");
+        if (disposed) {
+          acquired.release().catch(() => undefined);
+          return;
+        }
+        sentinel = acquired;
+        onChange("active");
+        acquired.addEventListener("release", () => {
+          if (sentinel !== acquired) return;
+          sentinel = null;
+          if (!disposed) onChange("idle");
+          if (!disposed && env.doc.visibilityState === "visible") acquire();
+        });
+      } catch {
+        if (!disposed) onChange("denied");
+      } finally {
+        acquiring = false;
+      }
+    })();
   };
 
-  const onVisibility = (): void => { if (document.visibilityState === "visible" && !sentinel) void acquire(); };
-  document.addEventListener("visibilitychange", onVisibility);
-  void acquire();
+  const onVisibility = (): void => { if (env.doc.visibilityState === "visible") acquire(); };
+  env.doc.addEventListener("visibilitychange", onVisibility);
+  acquire();
 
   return () => {
     disposed = true;
-    document.removeEventListener("visibilitychange", onVisibility);
-    sentinel?.release().catch(() => undefined);
+    env.doc.removeEventListener("visibilitychange", onVisibility);
+    const current = sentinel;
+    sentinel = null;
+    current?.release().catch(() => undefined);
   };
 }

@@ -26,7 +26,7 @@ The page requests the Screen Wake Lock when the browser allows it. Over plain HT
 
 ## Bluetooth tethering
 
-When the Mac and phone are on different networks: pair them once, enable the phone's Personal Hotspot / Bluetooth tethering, join it from the Mac, then restart `fold-pet run` and rescan the QR (the bridge prints the new address). Pet state is tiny; the slow link is fine.
+When the Mac and phone are on different networks: pair them once, enable the phone's Personal Hotspot / Bluetooth tethering, join it from the Mac, then restart `fold-pet run` (the bridge prints the new address). `fold-pet run` lists every LAN address but encodes only the first one in the QR, so if WiFi and tethering are both active the QR usually points at the WiFi address. In that case, open the printed URL for the tethering interface directly instead of scanning the QR. Pet state is tiny; the slow link is fine.
 
 ## Pets
 
@@ -47,4 +47,4 @@ M1: Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing.
 
 ## Security
 
-Events are accepted only from loopback. The phone API requires the per-install token; the QR carries it once and the browser stores it as an HttpOnly cookie. No cloud, no telemetry. Events contain agent/session/project/tool names only — never code, prompts, or outputs.
+Events are accepted only from loopback. The phone API requires the per-install token; the QR carries it once and the browser stores it as an HttpOnly cookie. The token still appears in the address bar and stays in browser history, so avoid sharing screenshots that show the address bar. No cloud, no telemetry. Events contain agent/session/project/tool names only — never code, prompts, or outputs.

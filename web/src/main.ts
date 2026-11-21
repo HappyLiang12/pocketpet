@@ -2,7 +2,7 @@ import "./style.css";
 import { PetRenderer, type PetState } from "./sprite.js";
 import { connectState } from "./ws.js";
 import { isQuiet } from "./quiet.js";
-import { keepAwake } from "./wake.js";
+import { WAKE_LABELS, keepAwake } from "./wake.js";
 
 interface Session { key: string; agent: string; project: string; phase: string; tool?: string; startedAt: number; lastEventAt: number; }
 interface Snapshot { now: number; pet: string; sessions: Session[]; activePet: string | null; sleepAfterMinutes: number; quietHours: { start: string; end: string } | null; }
@@ -157,7 +157,7 @@ function boot(): void {
     connEl.dataset.state = status;
   });
   keepAwake((status) => {
-    wakeInfo.textContent = `螢幕長亮：${status}`;
+    wakeInfo.textContent = `螢幕長亮：${WAKE_LABELS[status]}`;
   });
 }
 
