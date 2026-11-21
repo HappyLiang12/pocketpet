@@ -152,18 +152,37 @@ function installHintText(): string {
   const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (ios) return "分享 → 加入主畫面";
   if (/Android/.test(ua)) return "選單 → 加到主畫面";
-  return "可加入主畫面，長開螢幕";
+  return "在瀏覽器選單選擇「加到主畫面」，開啟更方便";
+}
+
+// Storage can be denied (private mode or enterprise policy). Reading must never
+// block boot, so a failure falls back to "not dismissed" and the hint shows.
+function installHintDismissed(): boolean {
+  try {
+    return localStorage.getItem(INSTALL_HINT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// The dismissal is best-effort: when the write throws, it only lasts for this page.
+function rememberInstallHintDismissed(): void {
+  try {
+    localStorage.setItem(INSTALL_HINT_KEY, "1");
+  } catch {
+    // Ignore: the hint is already hidden in the current document.
+  }
 }
 
 function setupInstallHint(): void {
   const hint = byId("install-hint");
   const standalone = window.matchMedia("(display-mode: standalone)").matches
     || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-  if (standalone || localStorage.getItem(INSTALL_HINT_KEY) === "1") return;
+  if (standalone || installHintDismissed()) return;
   byId("install-hint-text").textContent = installHintText();
   hint.hidden = false;
   byId<HTMLButtonElement>("install-hint-dismiss").addEventListener("click", () => {
-    localStorage.setItem(INSTALL_HINT_KEY, "1");
+    rememberInstallHintDismissed();
     hint.hidden = true;
   });
 }
@@ -188,7 +207,6 @@ function boot(): void {
   });
   petSearch.addEventListener("input", renderPetList);
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.hidden = true; });
-  setupInstallHint();
 
   fetch("/api/state").then((res) => (res.ok ? res.json() : null)).then((snapshot) => { if (snapshot) applySnapshot(snapshot as Snapshot); }).catch(() => undefined);
 
@@ -199,6 +217,9 @@ function boot(): void {
   keepAwake((status) => {
     wakeInfo.textContent = `螢幕長亮：${WAKE_LABELS[status]}`;
   });
+  // Optional enhancement only: runs after the networking setup above so that a
+  // storage or rendering failure here can never keep the app offline.
+  setupInstallHint();
 }
 
 boot();

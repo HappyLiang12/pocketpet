@@ -110,7 +110,7 @@ test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
   const hint = page.locator("#install-hint");
   // Desktop Chromium is neither iOS Safari nor Android Chrome.
   await expect(hint).toBeVisible();
-  await expect(page.locator("#install-hint-text")).toHaveText("可加入主畫面，長開螢幕");
+  await expect(page.locator("#install-hint-text")).toHaveText("在瀏覽器選單選擇「加到主畫面」，開啟更方便");
   await page.locator("#install-hint-dismiss").click();
   await expect(hint).toBeHidden();
   expect(await page.evaluate(() => localStorage.getItem("foldpet.installHintDismissed"))).toBe("1");
@@ -119,6 +119,44 @@ test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
   await page.reload();
   await page.locator("#gear").click();
   await expect(page.locator("#install-hint")).toBeHidden();
+});
+
+test("keeps booting and dismisses the hint when storage is denied", async ({ page }) => {
+  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "local:testpet" }),
+  }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Private mode / enterprise policy can make the dismissal key throw. Other
+  // keys keep working so the page can be inspected normally.
+  await page.addInitScript(() => {
+    const key = "foldpet.installHintDismissed";
+    const getItem = Storage.prototype.getItem;
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.getItem = function (this: Storage, name: string): string | null {
+      if (name === key) throw new DOMException("Storage access denied", "SecurityError");
+      return getItem.call(this, name);
+    };
+    Storage.prototype.setItem = function (this: Storage, name: string, value: string): void {
+      if (name === key) throw new DOMException("Storage access denied", "SecurityError");
+      setItem.call(this, name, value);
+    };
+  });
+
+  // Core boot must not depend on optional hint storage.
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+
+  // A failed read defaults to visible rather than hiding the hint.
+  await page.locator("#gear").click();
+  const hint = page.locator("#install-hint");
+  await expect(hint).toBeVisible();
+
+  // The failed write is best-effort; the local UI still hides the hint.
+  await page.locator("#install-hint-dismiss").click();
+  await expect(hint).toBeHidden();
 });
 
 test("draws scaled atlases with their real cell geometry", async ({ page }) => {
