@@ -26,6 +26,28 @@ describe("Aggregator", () => {
     expect(agg.petState()).toBe("running");
   });
 
+  it("keeps a failed flash across another session's start", () => {
+    let now = 1000;
+    const agg = new Aggregator({ now: () => now, flashMs: 2500, waveMs: 1500 });
+    agg.apply(ev("failed", "s2"));
+    now = 1100;
+    agg.apply(ev("started", "s3"));
+    expect(agg.petState()).toBe("failed");
+    now = 3600;
+    expect(agg.petState()).toBe("idle");
+  });
+
+  it("prefers a still-active failed flash over a newer activity flash", () => {
+    let now = 1000;
+    const agg = new Aggregator({ now: () => now, flashMs: 2500, waveMs: 1500 });
+    agg.apply(ev("failed", "s2"));
+    now = 3400;
+    agg.apply(ev("started", "s3"));
+    expect(agg.petState()).toBe("failed");
+    now = 3600;
+    expect(agg.petState()).toBe("waving");
+  });
+
   it("prefers waiting over a failed flash", () => {
     const agg = new Aggregator({ now: () => 1000 });
     agg.apply(ev("waiting", "s1"));

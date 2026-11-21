@@ -32,7 +32,8 @@ const PHASE_ORDER: Record<Phase, number> = { waiting: 0, working: 1, review: 2, 
 
 export class Aggregator {
   private readonly sessions = new Map<string, SessionView>();
-  private flash: Flash | null = null;
+  private failedFlash: Flash | null = null;
+  private activityFlash: Flash | null = null;
   private readonly now: () => number;
   private readonly ttlMs: number;
   private readonly flashMs: number;
@@ -63,9 +64,9 @@ export class Aggregator {
       startedAt: prev?.startedAt ?? event.ts,
       lastEventAt: now,
     });
-    if (event.phase === "started") this.flash = { state: "waving", until: now + this.waveMs };
-    if (event.phase === "done") this.flash = { state: "jumping", until: now + this.flashMs };
-    if (event.phase === "failed") this.flash = { state: "failed", until: now + this.flashMs };
+    if (event.phase === "started") this.activityFlash = { state: "waving", until: now + this.waveMs };
+    if (event.phase === "done") this.activityFlash = { state: "jumping", until: now + this.flashMs };
+    if (event.phase === "failed") this.failedFlash = { state: "failed", until: now + this.flashMs };
   }
 
   sweep(): void {
@@ -76,8 +77,10 @@ export class Aggregator {
   petState(): PetState {
     this.sweep();
     const sessions = [...this.sessions.values()];
+    const now = this.now();
     if (sessions.some((s) => s.phase === "waiting")) return "waiting";
-    if (this.flash && this.now() < this.flash.until) return this.flash.state;
+    if (this.failedFlash && now < this.failedFlash.until) return "failed";
+    if (this.activityFlash && now < this.activityFlash.until) return this.activityFlash.state;
     if (sessions.some((s) => s.phase === "review")) return "review";
     if (sessions.some((s) => s.phase === "working")) return "running";
     return "idle";
