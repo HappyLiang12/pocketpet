@@ -116,10 +116,14 @@ describe("bridge server setup page", () => {
     }
   });
 
-  it("refuses a non-loopback Host header (DNS rebinding)", async () => {
+  it("refuses a non-loopback Host header with a Mac-only page (DNS rebinding)", async () => {
     for (const host of ["evil.example", `evil.example:${bridge.port}`, `localhost:${bridge.port + 1}`]) {
       const res = await rawGet("/setup", { host });
       expect(res.status, `Host: ${host}`).toBe(403);
+      expect(res.headers["content-type"], `Host: ${host}`).toBe("text/html; charset=utf-8");
+      expect(res.headers["cache-control"], `Host: ${host}`).toBe("no-store");
+      expect(res.body, `Host: ${host}`).toContain("只限 Mac");
+      expect(res.body, `Host: ${host}`).toContain("重複使用");
       expect(res.body).not.toContain(bridge.config.token);
     }
   });

@@ -174,6 +174,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 - 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: foldpet_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` 設持久 cookie（瀏覽器重開毋須重掃；token 未手動更改前一直有效）。
 - 頁面載入後以 `history.replaceState` 移除 `?token=`，地址欄與其後書籤只剩 `/`；API、WebSocket 與重新載入都靠 HttpOnly cookie，token 不再出現在畫面或瀏覽歷史。
 - 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.foldpet.installHintDismissed`）。
+- 同一個 QR 可重複使用（非一次性）：每部手機各自掃一次，直到 token 更改。`/setup` 只供 Mac（非 loopback／錯 Host 顯示 Mac-only 403）；手機開 `/setup` 唔會配對；配對後地址欄只剩 `/`，該 URL 無 token，不能作配對分享。
 
 ### launchd 登入服務
 

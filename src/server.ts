@@ -9,7 +9,7 @@ import { saveConfig } from "./config.js";
 import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth.js";
-import { localHostname, pairingLinks, setupHtml } from "./onboarding.js";
+import { localHostname, pairingLinks, setupDeniedHtml, setupHtml } from "./onboarding.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
 
@@ -148,7 +148,16 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
       if (req.method === "GET" && path === "/setup") {
         // Loopback sockets alone are not enough: a DNS-rebinding page also connects from
         // 127.0.0.1, so the Host header must name this exact loopback listener.
-        if (!isLoopback(req.socket.remoteAddress) || !isLoopbackHost(req.headers.host, port)) return text(res, 403, "loopback only");
+        if (!isLoopback(req.socket.remoteAddress) || !isLoopbackHost(req.headers.host, port)) {
+          res.writeHead(403, {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+            "referrer-policy": "no-referrer",
+            "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+          });
+          return res.end(setupDeniedHtml(port));
+        }
         const links = pairingLinks(port, config.token, { hostname: localHostname() });
         let qrSvg = "";
         if (links.qrUrl) {

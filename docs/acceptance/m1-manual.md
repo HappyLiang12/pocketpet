@@ -309,7 +309,7 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 1. With the built, linked CLI, run `fold-pet up` in a terminal and observe the first-run output. If you want to test the first-run prompts, use a fresh `FOLDPET_HOME` (for example `FOLDPET_HOME=/tmp/foldpet-accept fold-pet up`) and record that path instead of `~/.fold-pet`.
 2. Answer the `Install Claude Code hooks? [Y/n]` prompt (or record the `--yes` / `--no-hooks` / non-TTY skip message). Record the `Start bridge at login? [y/N]` choice; if you answer no, leave the foreground bridge running until the scan is finished.
 3. Confirm the output shows `Config: <path>`, a full-size terminal QR, all LAN URLs, the `.local` URL (if any), and the three Traditional Chinese steps. Confirm `http://127.0.0.1:<port>/setup` opened in the Mac browser (or was skipped with `--no-open`).
-4. On the vivo X Fold 5, open the **camera** app and scan the QR code. Open the detected link. Do not use `adb reverse` or a copied URL for this step.
+4. On the vivo X Fold 5, open the **camera** app and scan the QR code. Open the detected link. Do not use `adb reverse` or a copied URL for this step. The same QR is reusable: use it again for the second phone; it stays valid until the token changes.
 5. After the page loads, inspect the address bar. Open the gear drawer and record the exact add-to-home hint, then dismiss it and reload.
 6. Add the page to the home screen (`加到主畫面`), close the browser tab, then open FoldPet from the new icon and confirm it loads with `已連線` without scanning the QR again. If a rescan is required, record that as the observed result.
 7. Repeat steps 4–6 with the iPhone camera and Safari.
@@ -319,6 +319,7 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 
 - The first run creates (or reports) the config, prints the path without the token, handles Claude hooks per consent (prompt, `--yes` install, `--no-hooks`, non-TTY skip, or "already installed"), prints a full-size QR, and opens the loopback `/setup` page.
 - Both phones load the page through a camera scan: the clock, pet, and `已連線` appear with no phone-side configuration.
+- The same QR pairs both phones (it is not one-time); opening `/setup` on a phone shows the Mac-only 403 page, and a cleaned `/` URL without a token does not pair.
 - After load the address bar shows the path only (`/...`), with no `?token=`; a reload still shows `已連線` and the pet loads (the HttpOnly cookie survives).
 - The drawer shows the one-time add-to-home hint exactly once (platform-appropriate text), and after dismissing it a reload keeps it hidden.
 - The page added to the home screen opens from its icon on Android and iOS and shows `已連線` without a rescan; if a rescan is required, that is recorded as the observed result (a finding, not a reason to relax this checklist).

@@ -182,7 +182,46 @@ ${localSection}
     <p>再用手機開 <code>${escapeHtml(usbUrl)}</code>。</p>
   </section>
 
-  <p class="note">QR code 預設用 IP 位址，方便大部分手機直接連線；配對網址入面嘅 token 就係開機憑證，唔好分享俾其他人。</p>
+  <p class="note"><strong>同一個 QR 可以重複使用</strong>：每部手機各自掃一次，直到你更改 token 為止。</p>
+  <p class="note">配對頁只供 Mac 開啟；手機唔需要開 <code>/setup</code>。配對後手機地址欄只剩 <code>/</code>，嗰個 URL 冇 token，唔好分享俾其他人——要加新手機，請返嚟呢一頁掃 QR。</p>
+</main>
+</body>
+</html>
+`;
+}
+
+/** Shown when /setup is opened from a phone or a non-loopback Host. Contains no token. */
+export function setupDeniedHtml(port: number): string {
+  return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FoldPet 配對頁只限 Mac</title>
+<style>
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #f6f4ef;
+    color: #24211c;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif;
+    line-height: 1.7;
+  }
+  main { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 12px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .note { color: #6b655d; font-size: 0.92rem; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #171512; color: #f3efe7; }
+    .note { color: #b3aca2; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>配對頁只限 Mac</h1>
+  <p>呢個配對頁只可以喺 Mac 本機開啟。請喺 Mac 開 <code>http://127.0.0.1:${port}/setup</code>（或執行 <code>fold-pet up</code>），然後用手機相機掃描頁面上嘅 QR。</p>
+  <p class="note">每部手機各自掃一次；同一個 QR 可以重複使用，直到你更改 token。手機唔需要開 <code>/setup</code>。</p>
 </main>
 </body>
 </html>

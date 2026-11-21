@@ -33,6 +33,8 @@ No app and no phone-side configuration:
 2. Point the phone **camera** at the QR code and open the link — no adb needed.
 3. Add the page to the home screen and keep it open while charging.
 
+The same QR is reusable: every phone scans it once and stays paired until you change the token in `~/.fold-pet/config.json`. Do not share the cleaned `/` URL (it has no token and returns 401), and do not open `/setup` on a phone — it is Mac-only and shows a Mac-only page.
+
 The token in `?token=...` is stored as an HttpOnly cookie and then removed from the address bar, so the visible and bookmarked URL is just `/`. The API, WebSocket, and reloads keep using that cookie. A one-time add-to-home hint appears in the gear drawer; dismissing it is remembered on that phone and hidden automatically when the page already runs standalone.
 
 ### `.local` address

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askYesNo, localHostname, pairingLinks, setupHtml } from "../src/onboarding.js";
+import { askYesNo, localHostname, pairingLinks, setupDeniedHtml, setupHtml } from "../src/onboarding.js";
 
 const fakeIfaces = {
   en0: [{ address: "192.168.1.5", family: "IPv4", internal: false, netmask: "255.255.255.0", mac: "aa", cidr: null }],
@@ -101,9 +101,19 @@ describe("setupHtml", () => {
     expect(html).toContain("同一個 Wi-Fi");
     expect(html).toContain("相機");
     expect(html).toContain("加到主畫面");
+    expect(html).toContain("可以重複使用");
+    expect(html).toContain("只供 Mac");
     expect(html).toContain("Bonjour");
     expect(html).toContain("adb reverse tcp:7788 tcp:7788");
     expect(html).toContain("http://127.0.0.1:7788/?token=tok");
+  });
+
+  it("explains Mac-only access to the setup page without a token", () => {
+    const html = setupDeniedHtml(7788);
+    expect(html).toContain("只限 Mac");
+    expect(html).toContain("127.0.0.1:7788");
+    expect(html).toContain("重複使用");
+    expect(html).not.toContain("?token=");
   });
 
   it("uses an explicit usbUrl, keeping the token even when no LAN URL exists", () => {
