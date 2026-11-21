@@ -5,7 +5,7 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge
 ## Requirements
 
 - macOS with Node.js >= 20
-- Phone on the same WiFi as the Mac, or the Mac joined to the phone's Bluetooth tethering
+- Phone on the same WiFi as the Mac (USB fallback below for different networks)
 - Claude Code for the M1 adapter
 
 ## Setup
@@ -24,9 +24,15 @@ Scan the QR on the phone, add the page to the home screen, and keep it open whil
 
 The page requests the Screen Wake Lock when the browser allows it. Over plain HTTP on a LAN IP the API is unavailable, so set the phone's auto-lock to Never (iOS) or extend the screen timeout / enable Stay awake (Android). A one-time local HTTPS certificate option may come later.
 
-## Bluetooth tethering
+## USB fallback (different networks)
 
-When the Mac and phone are on different networks: pair them once, enable the phone's Personal Hotspot / Bluetooth tethering, join it from the Mac, then restart `fold-pet run` (the bridge prints the new address). `fold-pet run` lists every LAN address but encodes only the first one in the QR, so if WiFi and tethering are both active the QR usually points at the WiFi address. In that case, open the printed URL for the tethering interface directly instead of scanning the QR. Pet state is tiny; the slow link is fine.
+macOS Monterey and later removed Bluetooth PAN/tethering, so Bluetooth is not a fallback on current Macs. When the phone and Mac are on different networks, connect the phone by USB with debugging enabled and forward the bridge port:
+
+```bash
+adb reverse tcp:7788 tcp:7788
+```
+
+Then open `http://127.0.0.1:7788/?token=...` on the phone (the token is in the `fold-pet run` output). `127.0.0.1` is a secure context, so the Wake Lock can stay active. Pet state is tiny; the USB link is plenty.
 
 ## Pets
 
@@ -34,7 +40,7 @@ FoldPet scans three local roots in order: `~/.fold-pet/pets`, `~/.codex/pets`, t
 
 - Install from the Petdex gallery: `npx petdex install boba` (lands in `~/.codex/pets` or `~/.petdex/pets` depending on the Petdex version).
 - Or drop a pet folder (`pet.json` + `spritesheet.webp|png`, 8×9 or 8×11 atlas) into `~/.fold-pet/pets`.
-- Pick the active pet from the phone's gear drawer. Use the same Petdex slug on desktop to show the same character.
+- Pick the active pet from the phone's gear drawer; use the search box to filter the Petdex gallery (local pets stay pinned). Use the same Petdex slug on desktop to show the same character.
 
 ## Commands
 
@@ -45,7 +51,7 @@ FoldPet scans three local roots in order: `~/.fold-pet/pets`, `~/.codex/pets`, t
 
 ## Status
 
-M1: Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and guided Bluetooth setup are later milestones. See `docs/superpowers/specs/2026-11-21-fold-pet-design.md`.
+M1: Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and USB fallback guidance are later milestones. See `docs/superpowers/specs/2026-11-21-fold-pet-design.md`.
 
 ## Security
 

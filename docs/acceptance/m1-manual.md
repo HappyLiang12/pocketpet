@@ -15,7 +15,7 @@ Rules:
 2. `npm link` has been run, and `fold-pet` resolves in the shell that starts Claude Code.
 3. Claude Code is installed and its settings file is writable (`~/.claude/settings.json` by default).
 4. A pet is available: either `npx petdex install boba` has succeeded, or a local pet exists in `~/.fold-pet/pets`.
-5. The phone and Mac are on the same WiFi for items 3–6 and 8–9; item 7 uses Bluetooth tethering; items 1, 2, and 10 are local to the Mac.
+5. The phone and Mac are on the same WiFi for items 3–6 and 8–9; item 7 uses USB + `adb reverse` (macOS Monterey+ has no Bluetooth PAN); items 1, 2, and 10 are local to the Mac.
 6. The phone is a vivo X Fold 5 with Chrome for items 3–5 and 7–8; an iPhone with Safari is also available for item 6.
 7. Record the device OS/browser versions, Claude Code version, and the commit under test in the sign-off block.
 
@@ -29,7 +29,7 @@ Rules:
 | 4 | Folded posture on vivo X Fold 5 (Chrome): clock + pet + chips readable | Tester: phone screenshot, folded | NOT RUN |
 | 5 | Unfolded posture: session cards visible | Tester: phone screenshot, unfolded | NOT RUN |
 | 6 | iPhone Safari: page loads, WS connects, pet reacts; drawer wake-lock status noted | Tester: iPhone screenshot + exact drawer label | NOT RUN |
-| 7 | Bluetooth tethering: Mac joined to phone hotspot, QR rescanned, pet reacts, address noted | Tester: `fold-pet run` stdout + phone screenshot | NOT RUN |
+| 7 | USB fallback: `adb reverse tcp:7788`, phone opens `127.0.0.1:7788`, pet reacts | Tester: `adb reverse` output + phone screenshot | NOT RUN |
 | 8 | Kill bridge: `已斷線`; restart: reconnect without reload | Tester: screen recording or paired screenshots + terminal output | NOT RUN |
 | 9 | Pet switching: `npx petdex install boba`, drawer switch, sprite changes | Tester: install output + before/after screenshots | NOT RUN |
 | 10 | No-secret check: `git grep -nE 'token\|secret'` has only placeholders/fixtures | Tester/reviewer: pasted grep output and review | NOT RUN |
@@ -187,33 +187,34 @@ Rules:
 (wake-lock line exactly as displayed; screenshot links; iPhone model/iOS version)
 ```
 
-### 7. Bluetooth tethering
+### 7. USB fallback (different networks)
+
+macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a fallback on current Macs. Use USB instead.
 
 **Steps**
 
-1. Pair the phone and Mac once if they are not already paired.
-2. On the phone, enable Personal Hotspot / Bluetooth tethering.
-3. Join the phone's hotspot from the Mac over Bluetooth.
-4. Restart `fold-pet run` so it enumerates the new interface, and note every printed address.
-5. Rescan the QR. If the QR points at the WiFi address instead of the tethering address, open the printed tethering URL directly (the bridge encodes only the first address; see README).
-6. Confirm the pet reacts to a Claude Code event.
+1. Connect the phone by USB and authorize USB debugging.
+2. From the Mac, run `adb reverse tcp:7788 tcp:7788`.
+3. On the phone, open `http://127.0.0.1:7788/?token=...` (token from `fold-pet run`).
+4. Trigger one Claude Code event and confirm the pet reacts.
 
 **PASS criteria**
 
-- The Mac obtains an address from the phone's tethering interface and can load the page.
-- The pet reacts after the rescan (or after opening the printed tethering URL).
-- The observed address is recorded. Keep the `?token=...` query string out of the record.
+- The page loads over the USB reverse mapping and shows `已連線`.
+- The pet reacts after a real event.
+- The drawer's `螢幕長亮` line is recorded. Over `127.0.0.1` this is a secure context, so `已啟用` is possible; do not require it.
+- No Bluetooth tethering attempt is required or expected on macOS Monterey+.
 
-**Producer of evidence:** tester, pasted `fold-pet run` address list plus a phone screenshot showing the connected page and pet reaction. Note the interface name/address observed.
+**Producer of evidence:** tester, `adb reverse` output + phone screenshot showing the connected page and pet reaction.
 
 **Result:** NOT RUN
 
 **Evidence:**
 
 ```text
-(paste printed addresses, with token redacted)
+(paste adb reverse output, with no token)
 
-(phone screenshot; note observed address and whether QR or manual URL was used)
+(phone screenshot)
 ```
 
 ### 8. Bridge disconnect and reconnect
@@ -308,6 +309,6 @@ Rules:
 | vivo X Fold 5 / Android / Chrome version | |
 | iPhone / iOS / Safari version | |
 | Claude Code version | |
-| Network (WiFi SSID or Bluetooth tethering) | |
+| Network (WiFi SSID / USB adb reverse) | |
 | Overall result | NOT RUN |
 | Notes / follow-ups | |

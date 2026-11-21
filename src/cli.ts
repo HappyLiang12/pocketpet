@@ -156,7 +156,7 @@ async function runServer(): Promise<number> {
   const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "web");
   const bridge = await startBridge({ home, config, webDist });
   const urls = urlsForPort(bridge.port, config.token);
-  if (urls.length === 0) console.log("No LAN IPv4 address found. Join WiFi or enable Bluetooth tethering.");
+  if (urls.length === 0) console.log("No LAN IPv4 address found. Join WiFi or use USB (adb reverse).");
   for (const url of urls) console.log(url);
   if (urls[0]) qrcode.generate(urls[0], { small: true });
   console.log("Scan the QR on your phone. Ctrl+C to stop.");

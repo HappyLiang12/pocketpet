@@ -16,7 +16,7 @@
 - 零安裝手機端：iOS Safari／Android Chrome 開啟即用，可加到主螢幕。
 - 顯示時鐘、寵物、每個 agent 的只讀狀態（agent、專案資料夾、目前工具／階段、已運行時間、最後事件）。
 - 重用 Petdex 寵物包；支援本機安裝、Petdex 畫廊、自行上傳。
-- WiFi 區網為主，藍牙 tethering 為次（不同網絡時）。
+- WiFi 區網為主，USB（`adb reverse`／有線）為次；macOS Monterey+ 已移除 Bluetooth PAN，不再作 fallback。
 - 私隱優先：事件不離開本機／區網。
 
 **非目標（v1）**
@@ -141,8 +141,8 @@ Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上
 3. 手機掃 QR → 開頁 → 加到主螢幕；之後開頁自動重連。
 
 - 主路徑：Mac 與手機同一 WiFi。
-- 次路徑：先藍牙配對一次，開手機 Personal Hotspot／藍牙 tethering，Mac 連上；bridge 偵測新 IP 並重新印 QR。寵物狀態數據量極細，PAN 足夠。
-- 長亮：Wake Lock 需要 secure context；純 HTTP LAN／PAN 不適用，抽屜顯示系統設定指引。本機 HTTPS（手機一次性安裝憑證）列為後續選項。
+- 次路徑（不同網絡）：USB 接線 + `adb reverse tcp:7788 tcp:7788`，手機開 `http://127.0.0.1:7788/?token=...`；bridge 不需改 IP。macOS Monterey+ 已移除 Bluetooth PAN（本機 `networksetup` 證實），所以不提供藍牙 tethering。
+- 長亮：Wake Lock 需要 secure context；純 HTTP LAN IP 不適用，抽屜顯示系統設定指引。USB `adb reverse` 使用 `127.0.0.1`，屬 secure context，可直接使用。本機 HTTPS（手機一次性安裝憑證）列為後續選項。
 - 全程免費、無帳號、無雲端。
 
 ## 保安與私隱
@@ -170,7 +170,7 @@ Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上
 
 - 單元測試：normalizer、phase→state 映射、多 session 彙總、寵物包驗證、manifest 解析。
 - 整合測試：以真實事件格式 POST 假 session，驗證 WebSocket snapshot／增量正確；不以捏造 UI 資料代替。
-- E2E：Playwright 兩個 viewport（摺合 6.53″、展開 8.03″）截圖與互動；真機 vivo X Fold 5（Android Chrome）＋ iPhone Safari；BT PAN 實測。
+- E2E：Playwright 兩個 viewport（摺合 6.53″、展開 8.03″）截圖與互動；真機 vivo X Fold 5（Android Chrome）＋ iPhone Safari；WiFi LAN／USB `adb reverse` 實測。
 - 驗收：Qoder、Claude Code、Codex CLI、OpenCode、Pi 各跑一次真實 session（真事件、真寵物）；摺合／展開各驗一次；斷線重連驗一次。
 - 測試不得為綠燈而放寬：負面情境要有正面對照（例如連線 → 斷線 → 重連後狀態一致）。
 
@@ -180,7 +180,7 @@ Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上
 |---|---|
 | M1 | Bridge ＋ Claude Code adapter ＋ 手機頁（兩姿態）＋ 本機／Petdex 寵物 ＋ QR ＋ doctor；Qoder 機制 spike（G1） |
 | M2 | Codex CLI、OpenCode、Pi adapters |
-| M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋ BT tethering 流程打磨 |
+| M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋ USB fallback 引導與（可選）tunnel 評估 |
 | M4 | 長亮指引／夜間調暗／真機驗收 |
 
 ### M1 實際交付與延後項目
@@ -196,7 +196,13 @@ M1 只交付 bridge、Claude Code adapter、手機頁（摺合／展開）、本
 - `init` 的預設寵物選擇：延後至 M2。
 - WebSocket 心跳：延後至 M2。
 
-其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與藍牙 tethering 引導流程仍屬 M3。
+其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與 USB fallback 引導／（可選）tunnel 評估仍屬 M3。
+
+## 決策更新（2026-11-21 真機測試）
+
+- 原設計以 Bluetooth tethering 作「不同網絡」fallback。真機測試時確認 Apple 已於 macOS Monterey 起移除 Bluetooth PAN：本機 `networksetup -createnetworkservice ... "Bluetooth PAN"` 回傳 `Bluetooth PAN is not a valid hardware port name`，Network 亦無 Bluetooth PAN service，藍牙選單沒有「Connect to Network」。
+- 因此 fallback 改為 **USB＋`adb reverse`**（有線）；WiFi 區網仍是主路徑。不同網絡的無線方案（WiFi hotspot／tunnel／relay）留待 M3 評估，M1 不加入雲端。
+- 來源：Speedify Android Bluetooth tethering（2026-11 更新）https://support.speedify.com/article/416-tether-android-mac-bluetooth；Apple Discussions https://discussions.apple.com/thread/254761525。
 
 ## 風險與具名閘
 
