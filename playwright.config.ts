@@ -9,6 +9,6 @@ export default defineConfig({
     url: "http://127.0.0.1:7799/health",
     reuseExistingServer: false,
     timeout: 30_000,
-    env: { FOLDPET_HOME: ".tmp-e2e" },
+    env: { POCKETPET_HOME: ".tmp-e2e" },
   },
 });

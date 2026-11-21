@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } f
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const SERVICE_LABEL = "dev.foldpet.bridge";
+export const SERVICE_LABEL = "dev.pocketpet.bridge";
 
 export type ServiceConfig = {
   home: string;
@@ -49,7 +49,7 @@ export function servicePlist(cfg: ServiceConfig): string {
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>FOLDPET_HOME</key>
+    <key>POCKETPET_HOME</key>
     <string>${xmlEscape(cfg.home)}</string>
   </dict>
   <key>RunAtLoad</key>

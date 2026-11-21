@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
-import { configPath, ensureConfig, foldPetHome, loadConfig, type Config } from "./config.js";
+import { configPath, ensureConfig, pocketpetHome, loadConfig, type Config } from "./config.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 import { doctorChecks } from "./doctor.js";
@@ -95,7 +95,7 @@ function describeError(error: unknown): string {
  */
 export async function runHook(agent: string): Promise<void> {
   if (agent !== "claude") return;
-  const home = foldPetHome();
+  const home = pocketpetHome();
   try {
     const raw = await readStdin();
     if (raw === null || !raw.trim()) return;
@@ -137,8 +137,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** True when every FoldPet hook event is wired as a command hook in the Claude settings file. */
-export function hasFoldPetHooks(settingsPath: string): boolean {
+/** True when every PocketPet hook event is wired as a command hook in the Claude settings file. */
+export function hasPocketPetHooks(settingsPath: string): boolean {
   if (!existsSync(settingsPath)) return false;
   let parsed: unknown;
   try {
@@ -171,7 +171,7 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
     return;
   }
   const settingsPath = claudeSettingsPath();
-  if (hasFoldPetHooks(settingsPath)) {
+  if (hasPocketPetHooks(settingsPath)) {
     console.log("Claude Code hooks: already installed");
     return;
   }
@@ -180,7 +180,7 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
   if (options.yes) install = true;
   else if (tty) install = await askYesNo("Install Claude Code hooks?", true, tty);
   else {
-    console.log("Claude Code hooks: skipped (not a TTY; pass --yes or run `fold-pet init`)");
+    console.log("Claude Code hooks: skipped (not a TTY; pass --yes or run `pocketpet init`)");
     return;
   }
   if (!install) {
@@ -216,8 +216,8 @@ async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> 
 
 type UpOptions = { yes: boolean; noHooks: boolean; noService: boolean; noOpen: boolean; qrHost: QrHost };
 
-const UP_USAGE = "usage: fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]";
-const SERVICE_USAGE = "usage: fold-pet service install|uninstall|status";
+const UP_USAGE = "usage: pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]";
+const SERVICE_USAGE = "usage: pocketpet service install|uninstall|status";
 
 function parseQrHost(value: string): QrHost | null {
   return value === "ip" || value === "local" ? value : null;
@@ -309,20 +309,20 @@ function waitForInterrupt(bridge: Bridge): Promise<void> {
 }
 
 async function runInit(): Promise<number> {
-  const home = foldPetHome();
+  const home = pocketpetHome();
   try {
     ensureConfig(home);
   } catch {
     // Never print the error: it may quote the malformed config, including the token.
     console.error(`config unreadable: ${configPath(home)}`);
-    console.error("Fix or delete the file, then run `fold-pet init` again.");
+    console.error("Fix or delete the file, then run `pocketpet init` again.");
     return 1;
   }
   const result = installClaudeHooks(claudeSettingsPath());
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
-  console.log("Next: fold-pet run");
+  console.log("Next: pocketpet run");
   return 0;
 }
 
@@ -332,14 +332,14 @@ async function runUp(args: string[]): Promise<number> {
     console.error(UP_USAGE);
     return 2;
   }
-  const home = foldPetHome();
+  const home = pocketpetHome();
   let config: Config;
   try {
     config = ensureConfig(home);
   } catch {
     // Never print the error: it may quote the malformed config, including the token.
     console.error(`config unreadable: ${configPath(home)}`);
-    console.error("Fix or delete the file, then run `fold-pet init` again.");
+    console.error("Fix or delete the file, then run `pocketpet init` again.");
     return 1;
   }
   console.log(`Config: ${configPath(home)}`);
@@ -374,13 +374,13 @@ async function runUp(args: string[]): Promise<number> {
       try {
         await installService(serviceConfig);
       } catch {
-        console.error("Could not install the bridge service. Build the CLI and run `fold-pet service install` for details.");
+        console.error("Could not install the bridge service. Build the CLI and run `pocketpet service install` for details.");
         return 1;
       }
     }
     if (!(await waitForHealth(config.port, SERVICE_HEALTH_TIMEOUT_MS))) {
       console.error(`Bridge is not responding on port ${config.port}.`);
-      console.error("Run `fold-pet service install` to reload it, or `fold-pet run` in the foreground to see the error.");
+      console.error("Run `pocketpet service install` to reload it, or `pocketpet run` in the foreground to see the error.");
       return 1;
     }
     console.log(`Bridge service is running (${SERVICE_LABEL}).`);
@@ -398,7 +398,7 @@ async function runUp(args: string[]): Promise<number> {
 function serviceFailureMessage(action: "install" | "uninstall", error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
-  return `Could not ${action} the bridge service (${SERVICE_LABEL}). Build the CLI with \`npm run build\` and retry \`fold-pet service ${action}\`.${refusal}`;
+  return `Could not ${action} the bridge service (${SERVICE_LABEL}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
 }
 
 async function runService(action: string | undefined): Promise<number> {
@@ -406,7 +406,7 @@ async function runService(action: string | undefined): Promise<number> {
     console.error(SERVICE_USAGE);
     return 2;
   }
-  const home = foldPetHome();
+  const home = pocketpetHome();
   try {
     ensureConfig(home);
   } catch {
@@ -442,7 +442,7 @@ async function runService(action: string | undefined): Promise<number> {
 
 async function runServer(args: string[] = []): Promise<number> {
   const serviceMode = args.includes("--service");
-  const home = foldPetHome();
+  const home = pocketpetHome();
   let config: Config;
   try {
     config = loadConfig(home);
@@ -452,18 +452,18 @@ async function runServer(args: string[] = []): Promise<number> {
     } catch {
       // Never print the error: it may quote the malformed config, including the token.
       console.error(`config unreadable: ${configPath(home)}`);
-      console.error("Fix or delete the file, then run `fold-pet init` again.");
+      console.error("Fix or delete the file, then run `pocketpet init` again.");
       return 1;
     }
     if (!serviceMode) {
       console.log(`Created config: ${configPath(home)}`);
-      console.log("Claude Code hooks are not installed yet; run `fold-pet init` to add them.");
+      console.log("Claude Code hooks are not installed yet; run `pocketpet init` to add them.");
     }
   }
   const bridge = await startBridge({ home, config, webDist: webDistPath() });
   if (serviceMode) {
     // The launchd job redirects stdout to a log; never write URLs or the token there.
-    console.log(`FoldPet bridge listening on port ${bridge.port}`);
+    console.log(`PocketPet bridge listening on port ${bridge.port}`);
   } else {
     printPairing({ port: bridge.port, token: config.token, qrHost: "ip", open: false, keepRunning: false });
   }
@@ -472,7 +472,7 @@ async function runServer(args: string[] = []): Promise<number> {
 }
 
 async function runDoctor(): Promise<number> {
-  const checks = await doctorChecks({ home: foldPetHome() });
+  const checks = await doctorChecks({ home: pocketpetHome() });
   for (const check of checks) console.log(`${check.status} ${check.name}: ${check.detail}`);
   return checks.some((check) => check.status === "FAIL") ? 1 : 0;
 }
@@ -493,10 +493,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   } catch {
     // Never print the thrown error: config parse messages or paths may carry secrets.
     if (command === "hook") return 0;
-    console.error(`fold-pet: ${command ?? "run"} failed`);
+    console.error(`pocketpet: ${command ?? "run"} failed`);
     return 1;
   }
-  console.error("usage: fold-pet init | up | run | service <install|uninstall|status> | doctor | hook claude");
+  console.error("usage: pocketpet init | up | run | service <install|uninstall|status> | doctor | hook claude");
   return 2;
 }
 

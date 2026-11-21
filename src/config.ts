@@ -9,7 +9,7 @@ const DEFAULT_PORT = 7788;
 
 /** Override for the very first config only; invalid values fall back to the default. */
 function initialPort(env: NodeJS.ProcessEnv): number {
-  const raw = env.FOLDPET_PORT?.trim();
+  const raw = env.POCKETPET_PORT?.trim();
   if (!raw || !/^\d+$/.test(raw)) return DEFAULT_PORT;
   const port = Number(raw);
   return Number.isInteger(port) && port <= 65535 ? port : DEFAULT_PORT;
@@ -24,8 +24,8 @@ export type Config = {
   quietHours: QuietHours | null;
 };
 
-export function foldPetHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.FOLDPET_HOME ?? join(homedir(), ".fold-pet");
+export function pocketpetHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.POCKETPET_HOME ?? join(homedir(), ".pocketpet");
 }
 
 export function configPath(home: string): string {

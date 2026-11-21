@@ -113,7 +113,7 @@ test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
   await expect(page.locator("#install-hint-text")).toHaveText("在瀏覽器選單選擇「加到主畫面」，開啟更方便");
   await page.locator("#install-hint-dismiss").click();
   await expect(hint).toBeHidden();
-  expect(await page.evaluate(() => localStorage.getItem("foldpet.installHintDismissed"))).toBe("1");
+  expect(await page.evaluate(() => localStorage.getItem("pocketpet.installHintDismissed"))).toBe("1");
 
   // localStorage lives in the same context, so the dismissal survives a reload.
   await page.reload();
@@ -131,7 +131,7 @@ test("keeps booting and dismisses the hint when storage is denied", async ({ pag
   // Private mode / enterprise policy can make the dismissal key throw. Other
   // keys keep working so the page can be inspected normally.
   await page.addInitScript(() => {
-    const key = "foldpet.installHintDismissed";
+    const key = "pocketpet.installHintDismissed";
     const getItem = Storage.prototype.getItem;
     const setItem = Storage.prototype.setItem;
     Storage.prototype.getItem = function (this: Storage, name: string): string | null {

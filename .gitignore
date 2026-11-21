@@ -4,5 +4,6 @@ test-results/
 playwright-report/
 .tmp-e2e/
 *.log
+.DS_Store
 .worktrees/
 .superpowers/

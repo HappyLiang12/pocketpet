@@ -10,7 +10,7 @@ interface Snapshot { now: number; pet: string; sessions: Session[]; activePet: s
 
 const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", qoder: "Qoder" };
 const PHASE_LABEL: Record<string, string> = { started: "開始", working: "工作中", waiting: "等待中", review: "待審", done: "完成", failed: "失敗", idle: "閒置" };
-const INSTALL_HINT_KEY = "foldpet.installHintDismissed";
+const INSTALL_HINT_KEY = "pocketpet.installHintDismissed";
 
 const byId = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const timeEl = byId("time");

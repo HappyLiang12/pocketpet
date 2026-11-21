@@ -22,7 +22,7 @@ function cookieToken(req: IncomingMessage): string | null {
   for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    if (part.slice(0, index).trim() !== "foldpet_token") continue;
+    if (part.slice(0, index).trim() !== "pocketpet_token") continue;
     try {
       return decodeURIComponent(part.slice(index + 1));
     } catch {
@@ -43,5 +43,5 @@ export function isAuthorized(req: IncomingMessage, url: URL, token: string): boo
 }
 
 export function setTokenCookie(res: ServerResponse, token: string): void {
-  res.setHeader("Set-Cookie", `foldpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`);
+  res.setHeader("Set-Cookie", `pocketpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`);
 }

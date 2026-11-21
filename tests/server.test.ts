@@ -12,7 +12,7 @@ let bridge: Bridge;
 let cookie = "";
 
 beforeEach(async () => {
-  home = mkdtempSync(join(tmpdir(), "foldpet-"));
+  home = mkdtempSync(join(tmpdir(), "pocketpet-"));
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "<html>ok</html>");
@@ -38,7 +38,7 @@ describe("bridge server", () => {
   it("serves the bootstrap page and sets a cookie", async () => {
     const res = await fetch(`${base()}/?token=${encodeURIComponent(bridge.config.token)}`);
     expect(res.status).toBe(200);
-    expect(cookie.startsWith("foldpet_token=")).toBe(true);
+    expect(cookie.startsWith("pocketpet_token=")).toBe(true);
   });
 
   it("accepts loopback events and reflects them in state", async () => {
@@ -187,7 +187,7 @@ describe("bridge server security", () => {
   });
 
   it("rejects malformed cookies without crashing", async () => {
-    const bad = { headers: { cookie: "foldpet_token=%E0%A4%A" } };
+    const bad = { headers: { cookie: "pocketpet_token=%E0%A4%A" } };
     expect((await fetch(`${base()}/api/state`, bad)).status).toBe(401);
     const ws = new WebSocket(`ws://127.0.0.1:${bridge.port}/ws`, { headers: bad.headers });
     await new Promise<void>((resolve) => { ws.on("error", () => resolve()); ws.on("close", () => resolve()); });

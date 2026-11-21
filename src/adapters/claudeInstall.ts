@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { dirname } from "node:path";
 
 export const CLAUDE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "SubagentStop", "Stop", "SessionEnd"] as const;
-export const HOOK_COMMAND = "fold-pet hook claude";
+export const HOOK_COMMAND = "pocketpet hook claude";
 
 type Hook = { type?: string; command?: string };
 type Entry = { hooks?: unknown };
@@ -16,7 +16,7 @@ function invalidSettings(settingsPath: string): Error {
 }
 
 /**
- * Idempotently adds the FoldPet command hook to every supported event in a
+ * Idempotently adds the PocketPet command hook to every supported event in a
  * Claude Code settings file. Unrelated settings and existing hook entries are
  * preserved verbatim; anything that does not look like a settings object is
  * rejected instead of being overwritten.

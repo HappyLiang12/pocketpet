@@ -1,14 +1,14 @@
-# FoldPet Onboarding Implementation Plan
+# PocketPet Onboarding Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make first install and pairing a one-command, scan-only experience: `fold-pet up` creates config (with explicit hooks consent), optionally starts a launchd service, prints a full-size QR plus a local setup page, and the phone opens the pet with zero configuration. Add token-stripping from the URL and a one-time add-to-home hint.
+**Goal:** Make first install and pairing a one-command, scan-only experience: `pocketpet up` creates config (with explicit hooks consent), optionally starts a launchd service, prints a full-size QR plus a local setup page, and the phone opens the pet with zero configuration. Add token-stripping from the URL and a one-time add-to-home hint.
 
 **Architecture:** A new `up` command composes config creation, optional Claude hook installation, optional launchd service, and pairing output. A macOS `service` module manages a LaunchAgent. The bridge gains a loopback-only `/setup` page that renders a server-side QR (new `qrcode` dependency) and URLs. The web app strips `?token=` via `history.replaceState` after the cookie is set and shows a one-time add-to-home hint.
 
 **Tech Stack:** Existing Node/TypeScript bridge, `qrcode` + `@types/qrcode`, macOS `launchctl`/`scutil`, existing Vite web app and Vitest/Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-11-21-fold-pet-design.md` (onboarding design approved in chat 2026-11-21; this plan records it).
+**Spec:** `docs/superpowers/specs/2026-11-21-pocketpet-design.md` (onboarding design approved in chat 2026-11-21; this plan records it).
 
 **Scope:** `up`, `service install|uninstall|status`, `/setup`, full-size terminal QR, token stripping, add-to-home hint, mDNS candidate display. No tunnel/relay, no native app, no Windows.
 
@@ -84,7 +84,7 @@
 
 **Interfaces:**
 - Token strip: on boot, if the URL has a `token` query param, call `history.replaceState(null, "", location.pathname)`; the cookie remains the auth source.
-- Hint: `#install-hint` inside the drawer with text per platform (iOS Safari share sheet / Android Chrome menu / generic), hidden when `display-mode: standalone` or `localStorage.foldpet.installHintDismissed === "1"`; a dismiss button sets the key.
+- Hint: `#install-hint` inside the drawer with text per platform (iOS Safari share sheet / Android Chrome menu / generic), hidden when `display-mode: standalone` or `localStorage.pocketpet.installHintDismissed === "1"`; a dismiss button sets the key.
 
 - [ ] Add E2E tests: `goto('/?token=...')` → `page.url()` ends with `/`; reload still shows `已連線` and the pet loads; open drawer → hint visible; dismiss → reload → hint hidden.
 - [ ] Run `npm run test:e2e` → fail.
@@ -99,34 +99,34 @@
 - Test: `tests/service.test.ts`
 
 **Interfaces:**
-- Produces: `SERVICE_LABEL = "dev.foldpet.bridge"`.
-- Produces: `servicePath(home?: string): string` → `~/Library/LaunchAgents/dev.foldpet.bridge.plist`.
-- Produces: `servicePlist({ home, nodePath, cliPath }): string` — Label, ProgramArguments `[nodePath, cliPath, "run", "--service"]`, EnvironmentVariables `FOLDPET_HOME`, RunAtLoad true, KeepAlive true, StandardOutPath/StandardErrorPath `<home>/logs/bridge.log`, XML-escaped.
+- Produces: `SERVICE_LABEL = "dev.pocketpet.bridge"`.
+- Produces: `servicePath(home?: string): string` → `~/Library/LaunchAgents/dev.pocketpet.bridge.plist`.
+- Produces: `servicePlist({ home, nodePath, cliPath }): string` — Label, ProgramArguments `[nodePath, cliPath, "run", "--service"]`, EnvironmentVariables `POCKETPET_HOME`, RunAtLoad true, KeepAlive true, StandardOutPath/StandardErrorPath `<home>/logs/bridge.log`, XML-escaped.
 - Produces: `installService(cfg, runner?): Promise<void>` / `uninstallService(cfg, runner?)` / `serviceStatus(cfg, runner?): Promise<boolean>`; default runner uses `execFileSync("launchctl", args)` for `bootstrap gui/<uid>`, `bootout gui/<uid>/<label>`, `print gui/<uid>/<label>`, `kickstart -k`.
 - Refuses `cliPath` ending in `.ts` or missing, with a message to run the built CLI.
 
-- [ ] Write failing tests with a fake runner: plist contains label, absolute node/cli paths, FOLDPET_HOME, log paths; install writes the plist (0600 log pre-created) and runs bootout (ignored if absent) then bootstrap; uninstall boots out then removes; status maps exit code; ts cli path refused.
+- [ ] Write failing tests with a fake runner: plist contains label, absolute node/cli paths, POCKETPET_HOME, log paths; install writes the plist (0600 log pre-created) and runs bootout (ignored if absent) then bootstrap; uninstall boots out then removes; status maps exit code; ts cli path refused.
 - [ ] Implement; use atomic tmp+rename for the plist; `mkdirSync(logs, { recursive: true, mode: 0o700 })`, `writeFileSync(log, "", { mode: 0o600 })`.
 - [ ] Run focused tests + typecheck.
 - [ ] Commit: `feat: add macOS launchd service management`.
-- [ ] Manual gate (user consent required): `fold-pet service install` with a temp home, `launchctl print`, `service uninstall`; if declined, mark NOT RUN.
+- [ ] Manual gate (user consent required): `pocketpet service install` with a temp home, `launchctl print`, `service uninstall`; if declined, mark NOT RUN.
 
-### Task 5: `fold-pet up` and forgiving `run`
+### Task 5: `pocketpet up` and forgiving `run`
 
 **Files:**
 - Modify: `src/cli.ts`
 - Test: `tests/cli.test.ts` (extend), plus a spawned CLI smoke
 
 **Interfaces:**
-- `fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]`.
+- `pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]`.
 - Flow:
   1. `ensureConfig`; print config path (never the token).
-  2. Claude settings at `CLAUDE_CONFIG_DIR` or `~/.claude/settings.json`: if no FoldPet hooks, ask `Install Claude Code hooks? [Y/n]` when TTY and not `--no-hooks`; `--yes` skips the prompt and installs. Non-TTY skips.
+  2. Claude settings at `CLAUDE_CONFIG_DIR` or `~/.claude/settings.json`: if no PocketPet hooks, ask `Install Claude Code hooks? [Y/n]` when TTY and not `--no-hooks`; `--yes` skips the prompt and installs. Non-TTY skips.
   3. If `http://127.0.0.1:<port>/health` responds, treat the bridge as running (service) and skip starting.
   4. Otherwise, if the service is not installed and TTY and not `--no-service`, ask `Start bridge at login? [y/N]`; `--yes` installs the service. Service mode waits for health, prints pairing, opens `/setup`, exits 0. Otherwise start in the foreground, print pairing, open `/setup`, wait for SIGINT.
   5. Pairing output: full-size terminal QR (`small: false`) for `qrUrl`, all IP URLs, optional `.local` URL, 3-step instructions, USB fallback hint when no LAN URL.
-- `fold-pet run` auto-creates config via `ensureConfig` if load fails, prints a hint that hooks need `init`, and continues; `run --service` prints only `FoldPet bridge listening on port N` and no URLs/QR, and does not open a browser.
-- `fold-pet service install|uninstall|status` calls Task 4.
+- `pocketpet run` auto-creates config via `ensureConfig` if load fails, prints a hint that hooks need `init`, and continues; `run --service` prints only `PocketPet bridge listening on port N` and no URLs/QR, and does not open a browser.
+- `pocketpet service install|uninstall|status` calls Task 4.
 
 - [ ] Extend CLI tests: `main(["up","--no-hooks","--no-service","--no-open"])` with a temp home and a fake `health`? Prefer spawning `node --import tsx src/cli.ts up --no-hooks --no-service --no-open` and reading stdout for "Scan" and a URL, then kill. Also test `run --service` stdout has no `?token=`.
 - [ ] Implement; keep `init`/`run` behavior; use `askYesNo` from Task 1.
@@ -137,11 +137,11 @@
 ### Task 6: Docs and acceptance
 
 **Files:**
-- Modify: `README.md`, `docs/superpowers/specs/2026-11-21-fold-pet-design.md`, `docs/acceptance/m1-manual.md`
+- Modify: `README.md`, `docs/superpowers/specs/2026-11-21-pocketpet-design.md`, `docs/acceptance/m1-manual.md`
 
-- [ ] README quick start: `npm install && npm run build && npm link && fold-pet up`; QR steps; add-to-home; `fold-pet service install`; `--qr-host local`; USB fallback; note `.local` caveat.
+- [ ] README quick start: `npm install && npm run build && npm link && pocketpet up`; QR steps; add-to-home; `pocketpet service install`; `--qr-host local`; USB fallback; note `.local` caveat.
 - [ ] Spec: onboarding section (up flow, service, setup page, token strip, hint, mDNS gate) and a decision note that IP is the default QR until Android+iPhone verification.
-- [ ] Acceptance: new item for `fold-pet up` + real camera scan + add-to-home; service install/reboot; `.local` result; keep unrun items NOT RUN.
+- [ ] Acceptance: new item for `pocketpet up` + real camera scan + add-to-home; service install/reboot; `.local` result; keep unrun items NOT RUN.
 - [ ] Run full unit + E2E + build; commit: `docs: document onboarding flow and service`.
 
 ## Self-Review

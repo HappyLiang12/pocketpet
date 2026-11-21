@@ -43,13 +43,13 @@ describe("isAuthorized", () => {
   it("accepts Bearer, query and cookie tokens", () => {
     expect(isAuthorized(req({ authorization: "Bearer tok" }), url(), "tok")).toBe(true);
     expect(isAuthorized(req({}), url("?token=tok"), "tok")).toBe(true);
-    expect(isAuthorized(req({ cookie: "a=1; foldpet_token=tok" }), url(), "tok")).toBe(true);
+    expect(isAuthorized(req({ cookie: "a=1; pocketpet_token=tok" }), url(), "tok")).toBe(true);
   });
   it("rejects missing or wrong tokens", () => {
     expect(isAuthorized(req({}), url(), "tok")).toBe(false);
     expect(isAuthorized(req({ authorization: "Bearer nope" }), url("?token=tok"), "tok")).toBe(false);
-    expect(isAuthorized(req({ cookie: "foldpet_token=nope" }), url(), "tok")).toBe(false);
-    expect(isAuthorized(req({ cookie: "foldpet_token=%E0%A4%A" }), url(), "tok")).toBe(false);
+    expect(isAuthorized(req({ cookie: "pocketpet_token=nope" }), url(), "tok")).toBe(false);
+    expect(isAuthorized(req({ cookie: "pocketpet_token=%E0%A4%A" }), url(), "tok")).toBe(false);
   });
 });
 
@@ -58,7 +58,7 @@ describe("setTokenCookie", () => {
     const headers: Record<string, string> = {};
     const res = { setHeader: (name: string, value: string) => { headers[name] = value; } } as unknown as ServerResponse;
     setTokenCookie(res, "a b");
-    expect(headers["Set-Cookie"]).toBe("foldpet_token=a%20b; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000");
+    expect(headers["Set-Cookie"]).toBe("pocketpet_token=a%20b; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000");
   });
 });
 

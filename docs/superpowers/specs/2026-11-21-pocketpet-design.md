@@ -1,4 +1,4 @@
-# FoldPet（工作名）— 摺機時鐘 × AI Agent 桌寵
+# PocketPet（工作名）— 摺機時鐘 × AI Agent 桌寵
 
 日期：2026-11-21
 狀態：設計已通過對話審批，待用戶覆核本文件
@@ -59,7 +59,7 @@ flowchart LR
 | 單元 | 位置 | 職責 | 依賴 |
 |---|---|---|---|
 | Agent adapters | Mac | 將各 agent 原生事件轉成統一 JSON，POST 去 loopback bridge | 各 agent 的 hook／plugin 機制 |
-| Bridge `fold-pet` | Mac（Node 20+ / TypeScript） | 事件正規化、狀態彙總、寵物目錄與驗證、靜態頁與 WebSocket、QR／token、doctor | `ws`、檔案系統 |
+| Bridge `pocketpet` | Mac（Node 20+ / TypeScript） | 事件正規化、狀態彙總、寵物目錄與驗證、靜態頁與 WebSocket、QR／token、doctor | `ws`、檔案系統 |
 | Phone page | 手機瀏覽器（Vite + TS/Canvas） | 時鐘、精靈動畫、自適應版面、重連、喚醒鎖 best effort | Bridge 的 HTTP／WS |
 
 每個單元可獨立理解與替換：adapter 只依賴事件合約；頁面只依賴 bridge 公開 API；bridge 是唯一知道寵物格式與狀態機的地方。
@@ -73,7 +73,7 @@ Adapter → bridge（只接受 loopback 來源）：
   "v": 1,
   "agent": "claude",
   "sessionId": "abc123",
-  "project": "fold-pet",
+  "project": "pocketpet",
   "phase": "working",
   "tool": "Edit",
   "detail": "src/app.ts",
@@ -117,7 +117,7 @@ Token 輪替／撤銷**未實作**：重新印 QR 不會撤銷舊連結，舊 co
 ## 寵物資產管道
 
 - Petdex 套件格式：每個寵物一個資料夾，內含 `pet.json`（名稱、slug、tags、frame 尺寸、動畫狀態）＋ `spritesheet.webp`／`.png`（8×9 或 v2 8×11 格，每格 192×208，建議 1536×2288，最少 256×256）。
-- 來源：`~/.codex/pets/*`（`npx petdex install <slug>` 安裝）、`~/.fold-pet/pets/*`（本頁上傳）、Petdex manifest 代理（`petdex.dev/api/manifest`，快取後由 bridge 提供，避免手機 CORS 與重複下載）。
+- 來源：`~/.codex/pets/*`（`npx petdex install <slug>` 安裝）、`~/.pocketpet/pets/*`（本頁上傳）、Petdex manifest 代理（`petdex.dev/api/manifest`，快取後由 bridge 提供，避免手機 CORS 與重複下載）。
 - 驗證：bridge 檢查 `pet.json` 與 spritesheet 存在、尺寸與格數合規；失敗回傳明確錯誤，不寫入。
 - 切換：手機抽屜即時切換；desktop 與 phone 要顯示同一寵物時，兩邊安裝同一 Petdex slug 即可。
 - 授權：Petdex 源碼 MIT；寵物圖像版權屬提交者，只在本機／個人使用，不再散佈。
@@ -132,12 +132,12 @@ Token 輪替／撤銷**未實作**：重新印 QR 不會撤銷舊連結，舊 co
 | Pi | hook 介面 | Clawd 已支援，需對照驗證 | 研究閘 G5 |
 | Qoder | 內建桌面寵物／Petdex 整合 | **研究閘 G1：事件機制未確認** | 可能要 hook、plugin 或 log tail |
 
-與其他寵物 app（Petdex Desktop、Clawd on Desk）並存：installer 採用 chaining，不覆寫別人的 hook；`fold-pet doctor` 檢查每隻 agent 的 hook 是否仍指向正確位置，被覆寫時明確提示。Clawd 為 AGPL-3.0，只作架構參考，不複製其程式碼。
+與其他寵物 app（Petdex Desktop、Clawd on Desk）並存：installer 採用 chaining，不覆寫別人的 hook；`pocketpet doctor` 檢查每隻 agent 的 hook 是否仍指向正確位置，被覆寫時明確提示。Clawd 為 AGPL-3.0，只作架構參考，不複製其程式碼。
 
 ## 安裝與連網
 
-1. `npm install && npm run build && npm link` 之後執行 `fold-pet up`（詳見下一節）：建立 config、按明確同意安裝 hooks、可選登入服務。
-2. `fold-pet up` 印出完整 QR 與所有區網 URL，並在 Mac 開啟 loopback 配對頁 `/setup`。
+1. `npm install && npm run build && npm link` 之後執行 `pocketpet up`（詳見下一節）：建立 config、按明確同意安裝 hooks、可選登入服務。
+2. `pocketpet up` 印出完整 QR 與所有區網 URL，並在 Mac 開啟 loopback 配對頁 `/setup`。
 3. 手機相機掃 QR → 開頁 → 加到主畫面；之後開頁自動重連。
 
 - 主路徑：Mac 與手機同一 WiFi。
@@ -149,15 +149,15 @@ Token 輪替／撤銷**未實作**：重新印 QR 不會撤銷舊連結，舊 co
 
 2026-11-21 增補。目標：第一次安裝只需一條指令，手機零設定，相機掃一次 QR 即可用。
 
-### `fold-pet up`
+### `pocketpet up`
 
 ```bash
 npm install && npm run build && npm link
-fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
+pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 ```
 
-1. `ensureConfig`：沒有 `~/.fold-pet/config.json` 就建立（目錄 0700、檔案 0600），只印路徑，不印 token。
-2. Claude Code hooks：只有明確同意才寫入 `~/.claude/settings.json`（或 `CLAUDE_CONFIG_DIR`）。TTY 互動問 `Install Claude Code hooks? [Y/n]`；`--yes` 直接安裝；`--no-hooks` 跳過；非 TTY 不問、跳過並提示稍後執行 `fold-pet init`。既有設定與第三方 hooks 保留，寫入用原子替換。
+1. `ensureConfig`：沒有 `~/.pocketpet/config.json` 就建立（目錄 0700、檔案 0600），只印路徑，不印 token。
+2. Claude Code hooks：只有明確同意才寫入 `~/.claude/settings.json`（或 `CLAUDE_CONFIG_DIR`）。TTY 互動問 `Install Claude Code hooks? [Y/n]`；`--yes` 直接安裝；`--no-hooks` 跳過；非 TTY 不問、跳過並提示稍後執行 `pocketpet init`。既有設定與第三方 hooks 保留，寫入用原子替換。
 3. 登入服務：TTY 問 `Start bridge at login? [y/N]`（預設否）；`--yes` 直接安裝；`--no-service` 跳過。若該 port 的 `/health` 已有回應，視為 bridge 已在運行，只重新印配對資料。
 4. 服務模式：等 `/health` 成功（最多 10 秒）後印配對資料並結束；前景模式：啟動 bridge、印配對資料、開 `/setup`、等 Ctrl+C。
 5. 配對輸出：完整尺寸終端 QR（`qrcode-terminal`，`small: false`）、所有區網 IP URL、可用的 `.local` URL、三步指示；沒有 LAN URL 時改印 USB `adb reverse` 指示。`--no-open` 不開瀏覽器。
@@ -171,19 +171,19 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 
 ### 手機流程與 token
 
-- 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: foldpet_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` 設持久 cookie（瀏覽器重開毋須重掃；token 未手動更改前一直有效）。
+- 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: pocketpet_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` 設持久 cookie（瀏覽器重開毋須重掃；token 未手動更改前一直有效）。
 - 頁面載入後以 `history.replaceState` 移除 `?token=`，地址欄與其後書籤只剩 `/`；API、WebSocket 與重新載入都靠 HttpOnly cookie，token 不再出現在畫面或瀏覽歷史。
-- 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.foldpet.installHintDismissed`）。
+- 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.pocketpet.installHintDismissed`）。
 - 同一個 QR 可重複使用（非一次性）：每部手機各自掃一次，直到 token 更改。`/setup` 只供 Mac（非 loopback／錯 Host 顯示 Mac-only 403）；手機開 `/setup` 唔會配對；配對後地址欄只剩 `/`，該 URL 無 token，不能作配對分享。
 - LAN bridge 係 HTTP-only：Chrome／Edge 嘅 HTTPS-First 會令手機出現 `ERR_TOO_MANY_RETRIES`／`ERR_SSL_PROTOCOL_ERROR`；troubleshooting 指示關閉該設定或改用 Safari／Firefox，並關 VPN／Private Relay。本機 HTTPS／tunnel 留待 M3。
 
 ### launchd 登入服務
 
-- `fold-pet service install|uninstall|status` 管理 LaunchAgent `dev.foldpet.bridge`（`~/Library/LaunchAgents/dev.foldpet.bridge.plist`）。
-- 服務執行 `<node> <dist/cli.js> run --service`，`RunAtLoad` 與 `KeepAlive` 為 true；`FOLDPET_HOME` 經 `EnvironmentVariables` 傳入。
+- `pocketpet service install|uninstall|status` 管理 LaunchAgent `dev.pocketpet.bridge`（`~/Library/LaunchAgents/dev.pocketpet.bridge.plist`）。
+- 服務執行 `<node> <dist/cli.js> run --service`，`RunAtLoad` 與 `KeepAlive` 為 true；`POCKETPET_HOME` 經 `EnvironmentVariables` 傳入。
 - 拒絕由 `.ts` 或不存在的 CLI 安裝，必須使用 build 後的 `dist/cli.js`；plist 以 tmp＋rename 原子寫入。
-- `run --service` 只印 `FoldPet bridge listening on port N`：log（`~/.fold-pet/logs/bridge.log`，檔案 0600、目錄 0700）永遠不含 token、URL 或 QR。
-- `service status` 以 `launchctl print gui/<uid>/dev.foldpet.bridge` 的 exit code 判定：running 回 0，否則 1。
+- `run --service` 只印 `PocketPet bridge listening on port N`：log（`~/.pocketpet/logs/bridge.log`，檔案 0600、目錄 0700）永遠不含 token、URL 或 QR。
+- `service status` 以 `launchctl print gui/<uid>/dev.pocketpet.bridge` 的 exit code 判定：running 回 0，否則 1。
 
 ### 網址選擇與 `.local` 閘
 
@@ -193,7 +193,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 ### 依賴與 port 語義
 
 - 新增 `qrcode`（MIT）＋ dev `@types/qrcode`，用於 `/setup` 的伺服器端 SVG QR；終端 QR 沿用 `qrcode-terminal`。無其他新依賴、無雲端、無遙測。
-- `FOLDPET_PORT` 只在**建立新 config** 時生效：整數 0–65535（0 由系統選 free port），無效值回落 7788；既有 config 不會被改寫，port 以 `config.json` 為準。
+- `POCKETPET_PORT` 只在**建立新 config** 時生效：整數 0–65535（0 由系統選 free port），無效值回落 7788；既有 config 不會被改寫，port 以 `config.json` 為準。
 
 **決策（2026-11-21）**：onboarding 的 QR 預設保持 IP；`.local` 只並列顯示並可經 `--qr-host local` 選用。等 Android 與 iPhone 都實測通過後，才重新評估是否把 `.local` 變成通用預設。
 
@@ -213,7 +213,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 | 手機休眠、轉向、摺合 | 喚醒後自動重連並取最新 snapshot |
 | 多個 agent 同時 waiting | chips 閃爍標示等待者；寵物保持 waiting |
 | 寵物檔壞／缺失 | 內建 fallback 精靈＋明確錯誤訊息 |
-| Hooks 被其他 app 覆寫 | `fold-pet doctor` 偵測並提示修復；installer 用 chaining |
+| Hooks 被其他 app 覆寫 | `pocketpet doctor` 偵測並提示修復；installer 用 chaining |
 | Token 洩漏 | 未實作輪替／撤銷：重新印 QR 不會令舊連結失效。手動改 `config.json` 的 `token` 並重啟 bridge 以作廢舊連結（CLI 屬 M3） |
 | Agent 崩潰無 Stop 事件 | session TTL 自動清除 |
 | 上傳惡意 zip／路徑穿越 | 拒絕並記錄錯誤 |

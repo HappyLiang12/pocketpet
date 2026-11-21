@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
-const home = process.env.FOLDPET_HOME ?? ".tmp-e2e";
+const home = process.env.POCKETPET_HOME ?? ".tmp-e2e";
 mkdirSync(home, { recursive: true });
 writeFileSync(join(home, "config.json"), JSON.stringify({ token: "e2e-token-0123456789", port: 7799, activePet: "local:testpet", sleepAfterMinutes: 10, quietHours: null }, null, 2));
 // A fresh cache entry keeps /api/pets fully offline during E2E. The gallery is

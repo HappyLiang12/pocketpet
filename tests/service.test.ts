@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 function setupConfig(overrides: Partial<ServiceConfig> = {}): ServiceConfig {
-  home = mkdtempSync(join(tmpdir(), "foldpet-service-"));
+  home = mkdtempSync(join(tmpdir(), "pocketpet-service-"));
   const cliPath = join(home, "dist", "cli.js");
   mkdirSync(dirname(cliPath), { recursive: true });
   writeFileSync(cliPath, "// built cli\n");
@@ -56,7 +56,7 @@ function assertMode(path: string, mode: number): void {
 describe("servicePath", () => {
   it("points at the per-user LaunchAgents plist", () => {
     expect(servicePath()).toBe(join(homedir(), "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`));
-    expect(servicePath().endsWith("Library/LaunchAgents/dev.foldpet.bridge.plist")).toBe(true);
+    expect(servicePath().endsWith("Library/LaunchAgents/dev.pocketpet.bridge.plist")).toBe(true);
   });
 });
 
@@ -72,7 +72,7 @@ describe("servicePlist", () => {
     expect(plist).toContain("<key>Label</key>");
     expect(plist).toContain(`<string>${SERVICE_LABEL}</string>`);
     expect(plist).toMatch(/<key>ProgramArguments<\/key>\s*<array>\s*<string>\/usr\/local\/bin\/node<\/string>\s*<string>\/Users\/fold pet\/app\/dist\/cli\.js<\/string>\s*<string>run<\/string>\s*<string>--service<\/string>\s*<\/array>/);
-    expect(plist).toMatch(new RegExp(`<key>FOLDPET_HOME</key>\\s*<string>/Users/fold pet/home</string>`));
+    expect(plist).toMatch(new RegExp(`<key>POCKETPET_HOME</key>\\s*<string>/Users/fold pet/home</string>`));
     expect(plist).toMatch(/<key>RunAtLoad<\/key>\s*<true\/>/);
     expect(plist).toMatch(/<key>KeepAlive<\/key>\s*<true\/>/);
     expect(plist).toMatch(/<key>ThrottleInterval<\/key>\s*<integer>5<\/integer>/);

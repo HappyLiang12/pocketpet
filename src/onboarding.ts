@@ -102,9 +102,9 @@ export function setupHtml(input: SetupHtmlInput): string {
       ? `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
       : `http://127.0.0.1:${port}/`);
   const qrSection = qrSvg
-    ? `  <p class="lead">用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 FoldPet。</p>
+    ? `  <p class="lead">用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 PocketPet。</p>
   <div class="qr">${qrSvg}</div>`
-    : `  <p class="lead">QR code 暫時無法產生（伺服器未能建立）。你仍然可以用下面嘅區網網址，或者用 USB 連接打開 FoldPet。</p>`;
+    : `  <p class="lead">QR code 暫時無法產生（伺服器未能建立）。你仍然可以用下面嘅區網網址，或者用 USB 連接打開 PocketPet。</p>`;
   const scanStep = qrSvg
     ? `    <li><strong>用相機掃描</strong>：打開手機相機，對準上面嘅 QR code。</li>`
     : `    <li><strong>開啟網址</strong>：喺手機瀏覽器打開上面其中一個區網網址。</li>`;
@@ -114,7 +114,7 @@ export function setupHtml(input: SetupHtmlInput): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>FoldPet 配對</title>
+<title>PocketPet 配對</title>
 <style>
   :root { color-scheme: light dark; }
   body {
@@ -161,7 +161,7 @@ export function setupHtml(input: SetupHtmlInput): string {
 </head>
 <body>
 <main>
-  <h1>FoldPet 配對</h1>
+  <h1>PocketPet 配對</h1>
 ${qrSection}
 
   <h2>三步完成配對</h2>
@@ -208,7 +208,7 @@ export function setupDeniedHtml(port: number): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>FoldPet 配對頁只限 Mac</title>
+<title>PocketPet 配對頁只限 Mac</title>
 <style>
   body {
     margin: 0;
@@ -231,7 +231,7 @@ export function setupDeniedHtml(port: number): string {
 <body>
 <main>
   <h1>配對頁只限 Mac</h1>
-  <p>呢個配對頁只可以喺 Mac 本機開啟。請喺 Mac 開 <code>http://127.0.0.1:${port}/setup</code>（或執行 <code>fold-pet up</code>），然後用手機相機掃描頁面上嘅 QR。</p>
+  <p>呢個配對頁只可以喺 Mac 本機開啟。請喺 Mac 開 <code>http://127.0.0.1:${port}/setup</code>（或執行 <code>pocketpet up</code>），然後用手機相機掃描頁面上嘅 QR。</p>
   <p class="note">每部手機各自掃一次；同一個 QR 可以重複使用，直到你更改 token。手機唔需要開 <code>/setup</code>。</p>
 </main>
 </body>

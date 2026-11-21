@@ -1,9 +1,9 @@
 {
-  "name": "fold-pet",
+  "name": "pocketpet",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "fold-pet": "dist/cli.js" },
+  "bin": { "pocketpet": "dist/cli.js" },
   "engines": { "node": ">=20" },
   "scripts": {
     "build:web": "vite build --config web/vite.config.ts",

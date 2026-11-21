@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main, hasFoldPetHooks, printPairing } from "../src/cli.js";
+import { main, hasPocketPetHooks, printPairing } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
 
@@ -15,17 +15,17 @@ let savedHome: string | undefined;
 let savedClaudeConfigDir: string | undefined;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), "foldpet-cli-"));
-  claudeDir = mkdtempSync(join(tmpdir(), "foldpet-claude-"));
-  savedHome = process.env.FOLDPET_HOME;
+  home = mkdtempSync(join(tmpdir(), "pocketpet-cli-"));
+  claudeDir = mkdtempSync(join(tmpdir(), "pocketpet-claude-"));
+  savedHome = process.env.POCKETPET_HOME;
   savedClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
-  process.env.FOLDPET_HOME = home;
+  process.env.POCKETPET_HOME = home;
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
 });
 
 afterEach(() => {
-  if (savedHome === undefined) delete process.env.FOLDPET_HOME;
-  else process.env.FOLDPET_HOME = savedHome;
+  if (savedHome === undefined) delete process.env.POCKETPET_HOME;
+  else process.env.POCKETPET_HOME = savedHome;
   if (savedClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = savedClaudeConfigDir;
   rmSync(home, { recursive: true, force: true });
@@ -61,7 +61,7 @@ async function spawnCli(
 ): Promise<SpawnedCli> {
   const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, FOLDPET_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, ...env },
+    env: { ...process.env, POCKETPET_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -95,7 +95,7 @@ function writeConfig(port: number): string {
   return token;
 }
 
-describe("fold-pet up and forgiving run", () => {
+describe("pocketpet up and forgiving run", () => {
   it("starts the foreground bridge and prints pairing URLs plus the three steps", async () => {
     writeConfig(0);
 
@@ -110,10 +110,10 @@ describe("fold-pet up and forgiving run", () => {
   }, 30_000);
 
   it("run auto-creates a missing config on an ephemeral port and hints that hooks need init", async () => {
-    const result = await spawnCli(["run"], /Ctrl\+C to stop/, { FOLDPET_PORT: "0" });
+    const result = await spawnCli(["run"], /Ctrl\+C to stop/, { POCKETPET_PORT: "0" });
 
     expect(result.stdout).toContain(`Created config: ${configPath(home)}`);
-    expect(result.stdout).toContain("fold-pet init");
+    expect(result.stdout).toContain("pocketpet init");
     expect(result.stdout).toMatch(/http:\/\/[^\s]+\?token=/);
     expect(result.stdout).toContain("Ctrl+C to stop");
     expect(existsSync(configPath(home))).toBe(true);
@@ -129,7 +129,7 @@ describe("fold-pet up and forgiving run", () => {
 
     const result = await spawnCli(["up", "--no-service", "--no-open"], /Ctrl\+C to stop/);
 
-    expect(result.stdout).toContain("Claude Code hooks: skipped (not a TTY; pass --yes or run `fold-pet init`)");
+    expect(result.stdout).toContain("Claude Code hooks: skipped (not a TTY; pass --yes or run `pocketpet init`)");
     expect(readFileSync(settingsPath, "utf8")).toBe(original);
     expect(result.signal ?? result.code).not.toBeNull();
   }, 30_000);
@@ -137,15 +137,15 @@ describe("fold-pet up and forgiving run", () => {
   it("run --service prints only the listening line and no tokenized URLs", async () => {
     writeConfig(0);
 
-    const result = await spawnCli(["run", "--service"], /FoldPet bridge listening on port \d+/);
+    const result = await spawnCli(["run", "--service"], /PocketPet bridge listening on port \d+/);
 
-    expect(result.stdout).toMatch(/FoldPet bridge listening on port \d+/);
+    expect(result.stdout).toMatch(/PocketPet bridge listening on port \d+/);
     expect(result.stdout).not.toContain("token=");
     expect(result.stdout).not.toContain("http://");
   }, 30_000);
 });
 
-describe("hasFoldPetHooks", () => {
+describe("hasPocketPetHooks", () => {
   function settingsWith(hook: unknown): string {
     const file = join(claudeDir, "settings.json");
     const hooks = Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [hook] }]]));
@@ -154,16 +154,16 @@ describe("hasFoldPetHooks", () => {
   }
 
   it("accepts a command hook for every event", () => {
-    expect(hasFoldPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }))).toBe(true);
+    expect(hasPocketPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }))).toBe(true);
   });
 
   it("requires hook.type to be command", () => {
-    expect(hasFoldPetHooks(settingsWith({ command: HOOK_COMMAND }))).toBe(false);
-    expect(hasFoldPetHooks(settingsWith({ type: "prompt", command: HOOK_COMMAND }))).toBe(false);
+    expect(hasPocketPetHooks(settingsWith({ command: HOOK_COMMAND }))).toBe(false);
+    expect(hasPocketPetHooks(settingsWith({ type: "prompt", command: HOOK_COMMAND }))).toBe(false);
   });
 
   it("rejects a missing settings file and a settings file missing one event", () => {
-    expect(hasFoldPetHooks(join(claudeDir, "missing.json"))).toBe(false);
+    expect(hasPocketPetHooks(join(claudeDir, "missing.json"))).toBe(false);
 
     const file = join(claudeDir, "settings.json");
     const hooks: Record<string, unknown> = Object.fromEntries(
@@ -171,7 +171,7 @@ describe("hasFoldPetHooks", () => {
     );
     delete hooks[CLAUDE_HOOK_EVENTS.at(-1)!];
     writeFileSync(file, JSON.stringify({ hooks }));
-    expect(hasFoldPetHooks(file)).toBe(false);
+    expect(hasPocketPetHooks(file)).toBe(false);
   });
 });
 
@@ -194,23 +194,23 @@ describe("pairing output", () => {
   });
 });
 
-describe("fold-pet cli usage", () => {
+describe("pocketpet cli usage", () => {
   it("service with an unknown action prints usage and exits 2", async () => {
     const { code, output } = await runMain(["service", "bogus"]);
 
     expect(code).toBe(2);
-    expect(output).toContain("usage: fold-pet service");
+    expect(output).toContain("usage: pocketpet service");
   });
 
   it("up rejects an unknown flag with usage and exit 2", async () => {
     const { code, output } = await runMain(["up", "--bogus"]);
 
     expect(code).toBe(2);
-    expect(output).toContain("usage: fold-pet up");
+    expect(output).toContain("usage: pocketpet up");
   });
 });
 
-describe("fold-pet cli error handling", () => {
+describe("pocketpet cli error handling", () => {
   it("service install surfaces the compiled-CLI refusal without touching launchd", async () => {
     const config = ensureConfig(home);
 
@@ -220,7 +220,7 @@ describe("fold-pet cli error handling", () => {
     expect(output).toContain("build and run the compiled CLI (dist/cli.js)");
     expect(output).toContain("Could not install the bridge service");
     expect(output).not.toContain(config.token);
-    expect(existsSync(join(home, "Library", "LaunchAgents", "dev.foldpet.bridge.plist"))).toBe(false);
+    expect(existsSync(join(home, "Library", "LaunchAgents", "dev.pocketpet.bridge.plist"))).toBe(false);
   });
 
   it("init fails without printing malformed config contents", async () => {
@@ -250,7 +250,7 @@ describe("fold-pet cli error handling", () => {
       const { code, output } = await runMain(["run"]);
 
       expect(code).toBe(1);
-      expect(output).toContain("fold-pet: run failed");
+      expect(output).toContain("pocketpet: run failed");
       expect(output).not.toContain("EADDRINUSE");
       expect(output).not.toContain(config.token);
     } finally {

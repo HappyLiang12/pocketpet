@@ -11,7 +11,7 @@ const payload = { pets: [{ slug: "boba", displayName: "Boba", spritesheetUrl: "h
 
 describe("loadPetdexPets", () => {
   it("fetches once then uses cache", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
     expect(await loadPetdexPets({ cacheFile, fetchImpl })).toMatchObject([{ id: "petdex:boba", name: "Boba" }]);
@@ -21,7 +21,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("falls back to stale cache when fetch fails", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const ok = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
     await loadPetdexPets({ cacheFile, fetchImpl: ok, maxAgeMs: 0 });
@@ -31,13 +31,13 @@ describe("loadPetdexPets", () => {
   });
 
   it("returns an empty list when offline with no cache", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const fetchImpl = vi.fn(async () => { throw new Error("offline"); });
     expect(await loadPetdexPets({ cacheFile: join(root, "manifest.json"), fetchImpl })).toEqual([]);
   });
 
   it("skips malformed manifest entries and survives a corrupt cache", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       pets: [
@@ -54,7 +54,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("drops entries whose asset URLs are not https petdex.dev", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       pets: [
@@ -69,7 +69,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("drops invalid URLs from a cached manifest without refetching", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     writeFileSync(cacheFile, JSON.stringify({
       fetchedAt: Date.now(),
@@ -84,7 +84,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("returns fetched pets when the cache cannot be written", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     mkdirSync(cacheFile);
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
@@ -92,7 +92,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("preserves display names from cached normalized entries", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     writeFileSync(cacheFile, JSON.stringify({
       fetchedAt: Date.now(),

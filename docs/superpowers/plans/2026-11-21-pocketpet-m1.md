@@ -1,14 +1,14 @@
-# FoldPet M1 Implementation Plan
+# PocketPet M1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the M1 slice of FoldPet — a local Mac bridge that ingests Claude Code hook events, serves a zero-install phone page showing a clock and a live Petdex sprite, with WiFi LAN pairing, local/Petdex pet catalog, and a doctor command.
+**Goal:** Build the M1 slice of PocketPet — a local Mac bridge that ingests Claude Code hook events, serves a zero-install phone page showing a clock and a live Petdex sprite, with WiFi LAN pairing, local/Petdex pet catalog, and a doctor command.
 
-**Architecture:** A Node/TypeScript bridge exposes a loopback-only event endpoint for agent adapters, an authenticated HTTP/WebSocket API for the phone, and serves a Vite-built static page. Events are normalized into six phases, aggregated into multi-session state, and mapped to the nine Petdex sprite states. The phone is a browser page with folded/wide responsive layouts. Pets come from `~/.codex/pets`, `~/.fold-pet/pets`, or the cached Petdex manifest.
+**Architecture:** A Node/TypeScript bridge exposes a loopback-only event endpoint for agent adapters, an authenticated HTTP/WebSocket API for the phone, and serves a Vite-built static page. Events are normalized into six phases, aggregated into multi-session state, and mapped to the nine Petdex sprite states. The phone is a browser page with folded/wide responsive layouts. Pets come from `~/.codex/pets`, `~/.pocketpet/pets`, or the cached Petdex manifest.
 
 **Tech Stack:** Node 20+ / TypeScript (NodeNext), `ws`, `qrcode-terminal`, Vite + vanilla TS/Canvas, Vitest, Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-11-21-fold-pet-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-21-pocketpet-design.md`
 
 **Scope:** This plan delivers milestone **M1 only** (bridge + Claude Code adapter + phone display + pet catalog + QR/doctor + Qoder research gate). M2 (Codex/OpenCode/Pi adapters), M3 (Qoder adapter, upload UI, USB fallback guidance), and M4 (device acceptance polish) get separate plans after M1 is verified. BT PAN transport needs no M1 code — the bridge binds `0.0.0.0`, so it works over any IP path; M3 only adds the guided flow.
 
@@ -34,7 +34,7 @@
 
 | Path | Responsibility |
 |---|---|
-| `src/config.ts` | `~/.fold-pet` paths, config load/ensure/save |
+| `src/config.ts` | `~/.pocketpet` paths, config load/ensure/save |
 | `src/events.ts` | Normalized event contract + validation |
 | `src/adapters/claudeHook.ts` | Claude Code hook stdin JSON → NormalizedEvent |
 | `src/adapters/claudeInstall.ts` | Idempotent merge of hooks into Claude settings |
@@ -72,17 +72,17 @@
 
 **Interfaces:**
 - Produces: `type Config = { token: string; port: number; activePet: string | null; sleepAfterMinutes: number; quietHours: { start: string; end: string } | null }`
-- Produces: `foldPetHome(env?)`, `configPath(home)`, `ensureConfig(home): Config`, `loadConfig(home): Config`, `saveConfig(home, config)`
+- Produces: `pocketpetHome(env?)`, `configPath(home)`, `ensureConfig(home): Config`, `loadConfig(home): Config`, `saveConfig(home, config)`
 
 - [ ] **Step 1: Create package and tooling files**
 
 ```json
 {
-  "name": "fold-pet",
+  "name": "pocketpet",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "fold-pet": "dist/cli.js" },
+  "bin": { "pocketpet": "dist/cli.js" },
   "engines": { "node": ">=20" },
   "scripts": {
     "build:web": "vite build --config web/vite.config.ts",
@@ -169,7 +169,7 @@ afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
 
 describe("config store", () => {
   it("creates a config with a long random token and dirs", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const config = ensureConfig(home);
     expect(config.token.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(7788);
@@ -178,14 +178,14 @@ describe("config store", () => {
   });
 
   it("round-trips saved fields", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const config = ensureConfig(home);
     saveConfig(home, { ...config, activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
     expect(loadConfig(home)).toMatchObject({ activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
   });
 
   it("rejects malformed config", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     writeFileSync(configPath(home), "{not json");
     expect(() => loadConfig(home)).toThrow();
   });
@@ -214,8 +214,8 @@ export type Config = {
   quietHours: QuietHours | null;
 };
 
-export function foldPetHome(env: NodeJS.ProcessEnv = process.env): string {
-  return env.FOLDPET_HOME ?? join(homedir(), ".fold-pet");
+export function pocketpetHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.POCKETPET_HOME ?? join(homedir(), ".pocketpet");
 }
 
 export function configPath(home: string): string {
@@ -711,7 +711,7 @@ describe("atlas geometry", () => {
 
 describe("local pets", () => {
   it("scans valid folders and skips broken ones", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "good"), { recursive: true });
     writeFileSync(join(root, "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
     writeFileSync(join(root, "good", "spritesheet.png"), pngHeader(384, 468));
@@ -723,7 +723,7 @@ describe("local pets", () => {
   });
 
   it("rejects an invalid sprite", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "bad"), { recursive: true });
     writeFileSync(join(root, "bad", "pet.json"), JSON.stringify({ displayName: "Bad" }));
     writeFileSync(join(root, "bad", "spritesheet.png"), pngHeader(100, 100));
@@ -749,7 +749,7 @@ const payload = { pets: [{ slug: "boba", displayName: "Boba", spritesheetUrl: "h
 
 describe("loadPetdexPets", () => {
   it("fetches once then uses cache", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
     expect(await loadPetdexPets({ cacheFile, fetchImpl })).toMatchObject([{ id: "petdex:boba", name: "Boba" }]);
@@ -759,7 +759,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("falls back to stale cache when fetch fails", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const cacheFile = join(root, "manifest.json");
     const ok = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
     await loadPetdexPets({ cacheFile, fetchImpl: ok, maxAgeMs: 0 });
@@ -769,7 +769,7 @@ describe("loadPetdexPets", () => {
   });
 
   it("returns an empty list when offline with no cache", async () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const fetchImpl = vi.fn(async () => { throw new Error("offline"); });
     expect(await loadPetdexPets({ cacheFile: join(root, "manifest.json"), fetchImpl })).toEqual([]);
   });
@@ -1001,7 +1001,7 @@ let bridge: Bridge;
 let cookie = "";
 
 beforeEach(async () => {
-  home = mkdtempSync(join(tmpdir(), "foldpet-"));
+  home = mkdtempSync(join(tmpdir(), "pocketpet-"));
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "<html>ok</html>");
@@ -1027,7 +1027,7 @@ describe("bridge server", () => {
   it("serves the bootstrap page and sets a cookie", async () => {
     const res = await fetch(`${base()}/?token=${encodeURIComponent(bridge.config.token)}`);
     expect(res.status).toBe(200);
-    expect(cookie.startsWith("foldpet_token=")).toBe(true);
+    expect(cookie.startsWith("pocketpet_token=")).toBe(true);
   });
 
   it("accepts loopback events and reflects them in state", async () => {
@@ -1090,7 +1090,7 @@ function cookieToken(req: IncomingMessage): string | null {
   for (const part of header.split(";")) {
     const index = part.indexOf("=");
     if (index === -1) continue;
-    if (part.slice(0, index).trim() === "foldpet_token") return decodeURIComponent(part.slice(index + 1));
+    if (part.slice(0, index).trim() === "pocketpet_token") return decodeURIComponent(part.slice(index + 1));
   }
   return null;
 }
@@ -1106,7 +1106,7 @@ export function isAuthorized(req: IncomingMessage, url: URL, token: string): boo
 }
 
 export function setTokenCookie(res: ServerResponse, token: string): void {
-  res.setHeader("Set-Cookie", `foldpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/`);
+  res.setHeader("Set-Cookie", `pocketpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/`);
 }
 ```
 
@@ -1385,7 +1385,7 @@ git commit -m "feat: add bridge server with auth, websocket and pet assets"
 **Interfaces:**
 - Produces: `CLAUDE_HOOK_EVENTS`, `HOOK_COMMAND`, `installClaudeHooks(settingsPath, command?): { added: string[]; already: string[] }`
 - Produces: `runHook(agent: string): Promise<void>` and `main(argv?): Promise<number>`
-- Consumes: `foldPetHome`, `loadConfig`, `mapClaudeHook`, `startBridge` (for the integration test)
+- Consumes: `pocketpetHome`, `loadConfig`, `mapClaudeHook`, `startBridge` (for the integration test)
 
 - [ ] **Step 1: Write failing tests**
 
@@ -1403,7 +1403,7 @@ afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }); });
 
 describe("installClaudeHooks", () => {
   it("adds hooks while preserving existing config and is idempotent", () => {
-    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const file = join(dir, "settings.json");
     writeFileSync(file, JSON.stringify({ model: "opus", hooks: { Stop: [{ hooks: [{ type: "command", command: "other-tool" }] }] } }));
     const first = installClaudeHooks(file);
@@ -1417,13 +1417,13 @@ describe("installClaudeHooks", () => {
   });
 
   it("creates the file when missing", () => {
-    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const file = join(dir, "settings.json");
     expect(installClaudeHooks(file).added).toEqual([...CLAUDE_HOOK_EVENTS]);
   });
 
   it("rejects invalid JSON", () => {
-    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const file = join(dir, "settings.json");
     writeFileSync(file, "{oops");
     expect(() => installClaudeHooks(file)).toThrow(/invalid Claude settings/);
@@ -1445,7 +1445,7 @@ import { startBridge, type Bridge } from "../src/server.js";
 let home = "";
 let bridge: Bridge;
 beforeEach(async () => {
-  home = mkdtempSync(join(tmpdir(), "foldpet-"));
+  home = mkdtempSync(join(tmpdir(), "pocketpet-"));
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "ok");
@@ -1455,18 +1455,18 @@ beforeEach(async () => {
 });
 afterEach(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
 
-describe("fold-pet hook claude", () => {
+describe("pocketpet hook claude", () => {
   it("posts a mapped event to the loopback bridge", async () => {
     const input = JSON.stringify({ session_id: "s1", cwd: "/tmp/demo", hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: "/secret/a.ts" } });
     execFileSync(process.execPath, ["--import", "tsx", "src/cli.ts", "hook", "claude"], {
-      input, cwd: process.cwd(), timeout: 10_000, env: { ...process.env, FOLDPET_HOME: home },
+      input, cwd: process.cwd(), timeout: 10_000, env: { ...process.env, POCKETPET_HOME: home },
     });
     await vi.waitFor(() => expect(bridge.aggregator.snapshot(null, { sleepAfterMinutes: 0, quietHours: null }).sessions).toHaveLength(1));
     expect(bridge.aggregator.petState()).toBe("running");
   });
 
   it("exits 0 on invalid input and never throws", () => {
-    expect(() => execFileSync(process.execPath, ["--import", "tsx", "src/cli.ts", "hook", "claude"], { input: "not json", cwd: process.cwd(), timeout: 10_000, env: { ...process.env, FOLDPET_HOME: home } })).not.toThrow();
+    expect(() => execFileSync(process.execPath, ["--import", "tsx", "src/cli.ts", "hook", "claude"], { input: "not json", cwd: process.cwd(), timeout: 10_000, env: { ...process.env, POCKETPET_HOME: home } })).not.toThrow();
   });
 });
 ```
@@ -1483,7 +1483,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const CLAUDE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "SubagentStop", "Stop", "SessionEnd"] as const;
-export const HOOK_COMMAND = "fold-pet hook claude";
+export const HOOK_COMMAND = "pocketpet hook claude";
 
 type Entry = { hooks?: Array<{ type?: string; command?: string }> };
 
@@ -1524,7 +1524,7 @@ export function installClaudeHooks(settingsPath: string, command = HOOK_COMMAND)
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { foldPetHome, loadConfig } from "./config.js";
+import { pocketpetHome, loadConfig } from "./config.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 
 async function readStdin(): Promise<string> {
@@ -1547,7 +1547,7 @@ export function logHookError(home: string, message: string): void {
 
 export async function runHook(agent: string): Promise<void> {
   if (agent !== "claude") return;
-  const home = foldPetHome();
+  const home = pocketpetHome();
   try {
     const raw = await readStdin();
     if (!raw.trim()) return;
@@ -1571,7 +1571,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     await runHook(arg ?? "");
     return 0;
   }
-  console.error("usage: fold-pet init | run | doctor | hook claude");
+  console.error("usage: pocketpet init | run | doctor | hook claude");
   return 2;
 }
 
@@ -1604,7 +1604,7 @@ git commit -m "feat: wire claude hooks and hook subcommand"
 **Interfaces:**
 - Produces: `type Check = { name: string; status: "PASS" | "WARN" | "FAIL"; detail: string }`
 - Produces: `doctorChecks({ home, settingsPath?, localPetDirs?, probePort? }): Promise<Check[]>`
-- CLI: `fold-pet init`, `fold-pet run`, `fold-pet doctor`
+- CLI: `pocketpet init`, `pocketpet run`, `pocketpet doctor`
 
 - [ ] **Step 1: Write failing test**
 
@@ -1624,7 +1624,7 @@ afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
 
 describe("doctorChecks", () => {
   it("fails config and hooks when missing", async () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const checks = await doctorChecks({ home, settingsPath: join(home, "settings.json"), localPetDirs: [join(home, "pets")], probePort: async () => false });
     expect(checks.find((c) => c.name === "config")?.status).toBe("FAIL");
     expect(checks.find((c) => c.name === "claude hooks")?.status).toBe("FAIL");
@@ -1633,10 +1633,10 @@ describe("doctorChecks", () => {
   });
 
   it("passes when config and all hooks exist", async () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     ensureConfig(home);
     const settingsPath = join(home, "settings.json");
-    writeFileSync(settingsPath, JSON.stringify({ hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: "fold-pet hook claude" }] }]])) }));
+    writeFileSync(settingsPath, JSON.stringify({ hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: "pocketpet hook claude" }] }]])) }));
     const checks = await doctorChecks({ home, settingsPath, localPetDirs: [join(home, "pets")], probePort: async () => true });
     expect(checks.find((c) => c.name === "claude hooks")?.status).toBe("PASS");
     expect(checks.find((c) => c.name === "config")?.status).toBe("PASS");
@@ -1706,7 +1706,7 @@ export async function doctorChecks(opts: Options): Promise<Check[]> {
 
   if (config) {
     const open = await (opts.probePort ?? probe)(config.port);
-    checks.push({ name: "bridge", status: open ? "PASS" : "WARN", detail: open ? `listening on ${config.port}` : `not listening on ${config.port}; run fold-pet run` });
+    checks.push({ name: "bridge", status: open ? "PASS" : "WARN", detail: open ? `listening on ${config.port}` : `not listening on ${config.port}; run pocketpet run` });
   }
   return checks;
 }
@@ -1722,7 +1722,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
-import { configPath, ensureConfig, foldPetHome, loadConfig } from "./config.js";
+import { configPath, ensureConfig, pocketpetHome, loadConfig } from "./config.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 import { installClaudeHooks } from "./adapters/claudeInstall.js";
 import { doctorChecks } from "./doctor.js";
@@ -1734,24 +1734,24 @@ Append before `main`:
 
 ```ts
 async function runInit(): Promise<number> {
-  const home = foldPetHome();
+  const home = pocketpetHome();
   const config = ensureConfig(home);
   const settingsPath = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
   const result = installClaudeHooks(settingsPath);
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
-  console.log("Next: fold-pet run");
+  console.log("Next: pocketpet run");
   return 0;
 }
 
 async function runServer(): Promise<number> {
-  const home = foldPetHome();
+  const home = pocketpetHome();
   let config;
   try {
     config = loadConfig(home);
   } catch {
-    console.error("No config found. Run `fold-pet init` first.");
+    console.error("No config found. Run `pocketpet init` first.");
     return 1;
   }
   const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "web");
@@ -1770,7 +1770,7 @@ async function runServer(): Promise<number> {
 }
 
 async function runDoctor(): Promise<number> {
-  const checks = await doctorChecks({ home: foldPetHome() });
+  const checks = await doctorChecks({ home: pocketpetHome() });
   for (const check of checks) console.log(`${check.status} ${check.name}: ${check.detail}`);
   return checks.some((check) => check.status === "FAIL") ? 1 : 0;
 }
@@ -1788,7 +1788,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     await runHook(arg ?? "");
     return 0;
   }
-  console.error("usage: fold-pet init | run | doctor | hook claude");
+  console.error("usage: pocketpet init | run | doctor | hook claude");
   return 2;
 }
 ```
@@ -1835,7 +1835,7 @@ export default defineConfig({
     url: "http://127.0.0.1:7799/health",
     reuseExistingServer: false,
     timeout: 30_000,
-    env: { FOLDPET_HOME: ".tmp-e2e" },
+    env: { POCKETPET_HOME: ".tmp-e2e" },
   },
 });
 ```
@@ -1847,7 +1847,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
-const home = process.env.FOLDPET_HOME ?? ".tmp-e2e";
+const home = process.env.POCKETPET_HOME ?? ".tmp-e2e";
 mkdirSync(home, { recursive: true });
 writeFileSync(join(home, "config.json"), JSON.stringify({ token: "e2e-token-0123456789", port: 7799, activePet: "local:testpet", sleepAfterMinutes: 10, quietHours: null }, null, 2));
 
@@ -1948,7 +1948,7 @@ export default defineConfig({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>FoldPet</title>
+    <title>PocketPet</title>
   </head>
   <body>
     <div id="app">
@@ -2637,7 +2637,7 @@ Insert immediately after the `connectState(...)` call inside `boot()`:
 - [ ] **Step 5: Create `README.md`**
 
 ```markdown
-# FoldPet
+# PocketPet
 
 Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge collects coding-agent activity and streams it to a phone web page — no app install, no cloud.
 
@@ -2652,9 +2652,9 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge
 ```bash
 npm install
 npm run build
-npm link          # gives a stable `fold-pet` command for Claude hooks
-fold-pet init     # creates ~/.fold-pet/config.json and wires Claude Code hooks
-fold-pet run      # prints LAN URLs and a QR code
+npm link          # gives a stable `pocketpet` command for Claude hooks
+pocketpet init     # creates ~/.pocketpet/config.json and wires Claude Code hooks
+pocketpet run      # prints LAN URLs and a QR code
 ```
 
 Scan the QR on the phone, add the page to the home screen, and keep it open while charging.
@@ -2665,24 +2665,24 @@ The page requests the Screen Wake Lock when the browser allows it. Over plain HT
 
 ## Bluetooth tethering
 
-When the Mac and phone are on different networks: pair them once, enable the phone's Personal Hotspot / Bluetooth tethering, join it from the Mac, then restart `fold-pet run` and rescan the QR (the bridge prints the new address). Pet state is tiny; the slow link is fine.
+When the Mac and phone are on different networks: pair them once, enable the phone's Personal Hotspot / Bluetooth tethering, join it from the Mac, then restart `pocketpet run` and rescan the QR (the bridge prints the new address). Pet state is tiny; the slow link is fine.
 
 ## Pets
 
 - Install from the Petdex gallery: `npx petdex install boba` (lands in `~/.codex/pets`).
-- Or drop a pet folder (`pet.json` + `spritesheet.webp|png`, 8×9 or 8×11 atlas) into `~/.fold-pet/pets`.
+- Or drop a pet folder (`pet.json` + `spritesheet.webp|png`, 8×9 or 8×11 atlas) into `~/.pocketpet/pets`.
 - Pick the active pet from the phone's gear drawer. Use the same Petdex slug on desktop to show the same character.
 
 ## Commands
 
-- `fold-pet init` — create config and Claude hooks
-- `fold-pet run` — start the bridge and print the QR
-- `fold-pet doctor` — check config, hooks, pets, port
-- `fold-pet hook claude` — internal; called by Claude Code hooks
+- `pocketpet init` — create config and Claude hooks
+- `pocketpet run` — start the bridge and print the QR
+- `pocketpet doctor` — check config, hooks, pets, port
+- `pocketpet hook claude` — internal; called by Claude Code hooks
 
 ## Status
 
-M1: Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and guided Bluetooth setup are later milestones. See `docs/superpowers/specs/2026-11-21-fold-pet-design.md`.
+M1: Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and guided Bluetooth setup are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`.
 
 ## Security
 
@@ -2742,8 +2742,8 @@ The document must contain:
 
 Checklist (each item must name the producer of the evidence):
 
-1. `fold-pet init` output shows all Claude hook events added (screenshot/output pasted by user).
-2. `fold-pet doctor` prints PASS for config, claude hooks, pets; bridge WARN before run, PASS while running.
+1. `pocketpet init` output shows all Claude hook events added (screenshot/output pasted by user).
+2. `pocketpet doctor` prints PASS for config, claude hooks, pets; bridge WARN before run, PASS while running.
 3. Start a real Claude Code session in a project; confirm phone shows the session chip within 1–2 s of the first tool call, waiting on notification, jumping on stop.
 4. Folded posture on vivo X Fold 5 (Chrome): clock + pet + chips readable; screenshot.
 5. Unfolded posture: session cards visible; screenshot.

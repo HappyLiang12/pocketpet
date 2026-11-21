@@ -55,7 +55,7 @@ describe("atlas geometry", () => {
 
 describe("local pets", () => {
   it("scans valid folders and skips broken ones", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "good"), { recursive: true });
     writeFileSync(join(root, "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
     writeFileSync(join(root, "good", "spritesheet.png"), pngHeader(384, 468));
@@ -67,7 +67,7 @@ describe("local pets", () => {
   });
 
   it("rejects an invalid sprite", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "bad"), { recursive: true });
     writeFileSync(join(root, "bad", "pet.json"), JSON.stringify({ displayName: "Bad" }));
     writeFileSync(join(root, "bad", "spritesheet.png"), pngHeader(100, 100));
@@ -76,7 +76,7 @@ describe("local pets", () => {
   });
 
   it("reports a vanished spritesheet instead of throwing", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "good"), { recursive: true });
     writeFileSync(join(root, "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
     writeFileSync(join(root, "good", "spritesheet.png"), pngHeader(384, 468));
@@ -89,7 +89,7 @@ describe("local pets", () => {
   });
 
   it("skips a source that is a file and still scans healthy dirs", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     mkdirSync(join(root, "pets", "good"), { recursive: true });
     writeFileSync(join(root, "pets", "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
     writeFileSync(join(root, "pets", "good", "spritesheet.png"), pngHeader(384, 468));
@@ -100,7 +100,7 @@ describe("local pets", () => {
   });
 
   it("keeps the first directory's pet when slugs collide", () => {
-    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    root = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const first = join(root, "first");
     const second = join(root, "second");
     for (const [dir, name] of [[first, "First Copy"], [second, "Second Copy"]] as const) {

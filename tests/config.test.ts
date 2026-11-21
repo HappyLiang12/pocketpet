@@ -7,19 +7,19 @@ import { configPath, ensureConfig, loadConfig, saveConfig } from "../src/config.
 let home = "";
 let savedPort: string | undefined;
 beforeEach(() => {
-  savedPort = process.env.FOLDPET_PORT;
-  // An ambient FOLDPET_PORT from the developer shell must not change the default-port expectations.
-  delete process.env.FOLDPET_PORT;
+  savedPort = process.env.POCKETPET_PORT;
+  // An ambient POCKETPET_PORT from the developer shell must not change the default-port expectations.
+  delete process.env.POCKETPET_PORT;
 });
 afterEach(() => {
-  if (savedPort === undefined) delete process.env.FOLDPET_PORT;
-  else process.env.FOLDPET_PORT = savedPort;
+  if (savedPort === undefined) delete process.env.POCKETPET_PORT;
+  else process.env.POCKETPET_PORT = savedPort;
   if (home) rmSync(home, { recursive: true, force: true });
 });
 
 describe("config store", () => {
   it("creates a config with a long random token and dirs", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const config = ensureConfig(home);
     expect(config.token.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(7788);
@@ -33,7 +33,7 @@ describe("config store", () => {
   });
 
   it("writes config.json with owner-only permissions and no temp file", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     ensureConfig(home);
     if (process.platform !== "win32") expect(statSync(configPath(home)).mode & 0o777).toBe(0o600);
     expect(existsSync(`${configPath(home)}.tmp`)).toBe(false);
@@ -43,7 +43,7 @@ describe("config store", () => {
   });
 
   it("preserves the token across repeated ensureConfig calls", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const first = ensureConfig(home);
     const second = ensureConfig(home);
     expect(second.token).toBe(first.token);
@@ -51,50 +51,50 @@ describe("config store", () => {
   });
 
   it("round-trips saved fields", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const config = ensureConfig(home);
     saveConfig(home, { ...config, activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
     expect(loadConfig(home)).toMatchObject({ activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
   });
 
   it("rejects malformed config", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     writeFileSync(configPath(home), "{not json");
     expect(() => loadConfig(home)).toThrow();
   });
 });
 
-describe("FOLDPET_PORT override on first creation", () => {
+describe("POCKETPET_PORT override on first creation", () => {
   it("creates a new config on the requested port", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
-    process.env.FOLDPET_PORT = "0";
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    process.env.POCKETPET_PORT = "0";
 
     expect(ensureConfig(home).port).toBe(0);
     expect(loadConfig(home).port).toBe(0);
   });
 
   it("accepts another valid port", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
-    process.env.FOLDPET_PORT = "9099";
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    process.env.POCKETPET_PORT = "9099";
 
     expect(ensureConfig(home).port).toBe(9099);
   });
 
   it("never overrides a config that already exists", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const created = ensureConfig(home);
     expect(created.port).toBe(7788);
-    process.env.FOLDPET_PORT = "0";
+    process.env.POCKETPET_PORT = "0";
 
     expect(ensureConfig(home).port).toBe(7788);
     expect(loadConfig(home).port).toBe(7788);
   });
 
   it("falls back to 7788 for an invalid value", () => {
-    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     for (const value of ["abc", "-1", "65536", "70000", "", "12.5"]) {
       rmSync(configPath(home), { force: true });
-      process.env.FOLDPET_PORT = value;
+      process.env.POCKETPET_PORT = value;
       expect(ensureConfig(home).port, `value: ${JSON.stringify(value)}`).toBe(7788);
     }
   });

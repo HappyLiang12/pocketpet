@@ -58,9 +58,9 @@ export async function doctorChecks(opts: Options): Promise<Check[]> {
 
   if (config) {
     const open = await (opts.probePort ?? probe)(config.port);
-    checks.push({ name: "bridge", status: open ? "PASS" : "WARN", detail: open ? `listening on ${config.port}` : `not listening on ${config.port}; run fold-pet run` });
+    checks.push({ name: "bridge", status: open ? "PASS" : "WARN", detail: open ? `listening on ${config.port}` : `not listening on ${config.port}; run pocketpet run` });
   } else {
-    checks.push({ name: "bridge", status: "WARN", detail: "no config; run fold-pet init" });
+    checks.push({ name: "bridge", status: "WARN", detail: "no config; run pocketpet init" });
   }
   return checks;
 }
