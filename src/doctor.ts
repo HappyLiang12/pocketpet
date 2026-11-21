@@ -53,7 +53,7 @@ export async function doctorChecks(opts: Options): Promise<Check[]> {
   const settingsPath = opts.settingsPath ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
   checks.push(claudeHookCheck(settingsPath));
 
-  const pets = scanLocalPets(opts.localPetDirs ?? [join(opts.home, "pets"), join(homedir(), ".codex", "pets")]);
+  const pets = scanLocalPets(opts.localPetDirs ?? [join(opts.home, "pets"), join(homedir(), ".codex", "pets"), join(homedir(), ".petdex", "pets")]);
   checks.push(pets.length > 0 ? { name: "pets", status: "PASS", detail: `${pets.length} local pet(s)` } : { name: "pets", status: "WARN", detail: "none found; run npx petdex install boba" });
 
   if (config) {

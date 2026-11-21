@@ -30,7 +30,9 @@ When the Mac and phone are on different networks: pair them once, enable the pho
 
 ## Pets
 
-- Install from the Petdex gallery: `npx petdex install boba` (lands in `~/.codex/pets`).
+FoldPet scans three local roots in order: `~/.fold-pet/pets`, `~/.codex/pets`, then `~/.petdex/pets`. The first copy of a slug wins.
+
+- Install from the Petdex gallery: `npx petdex install boba` (lands in `~/.codex/pets` or `~/.petdex/pets` depending on the Petdex version).
 - Or drop a pet folder (`pet.json` + `spritesheet.webp|png`, 8×9 or 8×11 atlas) into `~/.fold-pet/pets`.
 - Pick the active pet from the phone's gear drawer. Use the same Petdex slug on desktop to show the same character.
 

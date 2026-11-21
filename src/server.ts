@@ -96,7 +96,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const now = opts.now ?? Date.now;
   const aggregator = new Aggregator({ now, ttlMs: opts.ttlMs, flashMs: opts.flashMs });
-  const localPetDirs = opts.localPetDirs ?? [join(home, "pets"), join(homedir(), ".codex", "pets")];
+  const localPetDirs = opts.localPetDirs ?? [join(home, "pets"), join(homedir(), ".codex", "pets"), join(homedir(), ".petdex", "pets")];
   const cacheFile = join(home, "cache", "petdex", "manifest.json");
   const wsClients = new Set<WebSocket>();
 

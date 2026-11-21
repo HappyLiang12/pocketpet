@@ -38,6 +38,7 @@ export function readImageSize(buf: Buffer): { width: number; height: number } | 
 
 export function scanLocalPets(dirs: string[]): LocalPet[] {
   const pets: LocalPet[] = [];
+  const seen = new Set<string>();
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
     let entries: Dirent[];
@@ -56,7 +57,12 @@ export function scanLocalPets(dirs: string[]): LocalPet[] {
         const name = typeof meta.displayName === "string" ? meta.displayName : typeof meta.name === "string" ? meta.name : entry.name;
         const spriteFile = ["spritesheet.webp", "spritesheet.png"].find((file) => existsSync(join(petDir, file)));
         if (!spriteFile) continue;
-        pets.push({ id: `local:${entry.name}`, source: "local", slug: entry.name, name, dir: petDir, spriteFile });
+        const id = `local:${entry.name}`;
+        // First directory wins so the same Petdex slug installed in several
+        // roots (or copied between them) is listed once.
+        if (seen.has(id)) continue;
+        seen.add(id);
+        pets.push({ id, source: "local", slug: entry.name, name, dir: petDir, spriteFile });
       } catch {
         continue;
       }

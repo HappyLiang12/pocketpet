@@ -98,4 +98,20 @@ describe("local pets", () => {
     expect(scanLocalPets([notADir, join(root, "pets")]).map((p) => p.id)).toEqual(["local:good"]);
     expect(scanLocalPets([join(root, "pets"), notADir]).map((p) => p.id)).toEqual(["local:good"]);
   });
+
+  it("keeps the first directory's pet when slugs collide", () => {
+    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const first = join(root, "first");
+    const second = join(root, "second");
+    for (const [dir, name] of [[first, "First Copy"], [second, "Second Copy"]] as const) {
+      mkdirSync(join(dir, "boba"), { recursive: true });
+      writeFileSync(join(dir, "boba", "pet.json"), JSON.stringify({ displayName: name }));
+      writeFileSync(join(dir, "boba", "spritesheet.png"), pngHeader(384, 468));
+    }
+    const pets = scanLocalPets([first, second]);
+    expect(pets).toHaveLength(1);
+    expect(pets[0]?.id).toBe("local:boba");
+    expect(pets[0]?.dir).toBe(join(first, "boba"));
+    expect(pets[0]?.name).toBe("First Copy");
+  });
 });

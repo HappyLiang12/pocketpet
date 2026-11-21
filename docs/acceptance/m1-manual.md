@@ -257,7 +257,7 @@ Rules:
 
 **Producer of evidence:** tester, pasted install output plus `ls` output and before/after screenshots.
 
-**Note:** FoldPet currently scans `~/.codex/pets` and `~/.fold-pet/pets` (`src/server.ts:92`), not `~/.petdex/pets`. If Petdex writes only to `~/.petdex/pets`, record this item as `FAIL` with the observed path; do not move files or change code as part of acceptance. This is an acceptance-time observation, not a pre-judged defect.
+**Note:** FoldPet scans `~/.fold-pet/pets`, `~/.codex/pets`, and `~/.petdex/pets` in that order (`src/server.ts`), and the first copy of a slug wins. If Petdex installs somewhere else, record this item as `FAIL` with the observed path; do not move files or change code as part of acceptance. This is an acceptance-time observation, not a pre-judged defect.
 
 **Result:** NOT RUN
 
