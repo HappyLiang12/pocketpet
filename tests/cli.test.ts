@@ -1,27 +1,33 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main, hasPocketPetHooks, printPairing } from "../src/cli.js";
+import { main, hasPocketPetHooks, printPairing, qoderHookCommand } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
+import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
 
 let home = "";
 let claudeDir = "";
+let userHome = "";
 let savedHome: string | undefined;
+let savedUserHome: string | undefined;
 let savedClaudeConfigDir: string | undefined;
 let savedLang: string | undefined;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "pocketpet-cli-"));
   claudeDir = mkdtempSync(join(tmpdir(), "pocketpet-claude-"));
+  userHome = mkdtempSync(join(tmpdir(), "pocketpet-user-"));
   savedHome = process.env.POCKETPET_HOME;
+  savedUserHome = process.env.HOME;
   savedClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
   savedLang = process.env.POCKETPET_LANG;
   process.env.POCKETPET_HOME = home;
+  process.env.HOME = userHome;
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
   process.env.POCKETPET_LANG = "en";
 });
@@ -29,12 +35,15 @@ beforeEach(() => {
 afterEach(() => {
   if (savedHome === undefined) delete process.env.POCKETPET_HOME;
   else process.env.POCKETPET_HOME = savedHome;
+  if (savedUserHome === undefined) delete process.env.HOME;
+  else process.env.HOME = savedUserHome;
   if (savedClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = savedClaudeConfigDir;
   if (savedLang === undefined) delete process.env.POCKETPET_LANG;
   else process.env.POCKETPET_LANG = savedLang;
   rmSync(home, { recursive: true, force: true });
   rmSync(claudeDir, { recursive: true, force: true });
+  rmSync(userHome, { recursive: true, force: true });
 });
 
 async function runMain(argv: string[]): Promise<{ code: number; output: string }> {
@@ -297,4 +306,118 @@ describe("pocketpet cli error handling", () => {
       await new Promise<void>((resolve) => blocked.close(() => resolve()));
     }
   });
+});
+
+describe("qoderHookCommand", () => {
+  it("uses the absolute node binary and compiled CLI path", () => {
+    expect(qoderHookCommand("/app/dist/cli.js", "/usr/local/bin/node")).toBe(
+      "'/usr/local/bin/node' '/app/dist/cli.js' hook qoder",
+    );
+  });
+
+  it("falls back to the linked command for a TypeScript entry point", () => {
+    expect(qoderHookCommand("/repo/src/cli.ts", "/usr/local/bin/node")).toBe("pocketpet hook qoder");
+  });
+
+  it("shell-quotes apostrophes", () => {
+    expect(qoderHookCommand("/tmp/a'b/cli.js", "/tmp/node")).toBe("'/tmp/node' '/tmp/a'\\''b/cli.js' hook qoder");
+  });
+});
+
+describe("pocketpet init Qoder hooks", () => {
+  function qoderRoot(name = ".qoder"): string {
+    return join(userHome, name);
+  }
+
+  it("installs hooks into an existing root and preserves unrelated settings", async () => {
+    mkdirSync(qoderRoot(), { recursive: true });
+    writeFileSync(join(qoderRoot(), "settings.json"), JSON.stringify({ enabledPlugins: { context: true } }));
+
+    const { code, output } = await runMain(["init"]);
+
+    expect(code).toBe(0);
+    expect(output).toContain(`Qoder hooks (${qoderRoot()}) added: SessionStart`);
+    const settings = JSON.parse(readFileSync(join(qoderRoot(), "settings.json"), "utf8"));
+    expect(settings.enabledPlugins).toEqual({ context: true });
+    expect(Object.keys(settings.hooks).sort()).toEqual([...QODER_HOOK_EVENTS].sort());
+    expect(settings.hooks.Stop[0].hooks[0]).toMatchObject({ type: "command", timeout: 2 });
+    expect(settings.hooks.Stop[0].hooks[0].command).toContain("hook qoder");
+  });
+
+  it("reports already-present events on a second init", async () => {
+    mkdirSync(qoderRoot(), { recursive: true });
+    await runMain(["init"]);
+
+    const { output } = await runMain(["init"]);
+
+    expect(output).toContain(`Qoder hooks (${qoderRoot()}) added: none`);
+    expect(output).toContain(`Qoder hooks (${qoderRoot()}) already present: SessionStart`);
+  });
+
+  it("installs into both existing roots", async () => {
+    mkdirSync(qoderRoot(".qoder"), { recursive: true });
+    mkdirSync(qoderRoot(".qoder-cn"), { recursive: true });
+
+    await runMain(["init"]);
+
+    expect(existsSync(join(qoderRoot(".qoder"), "settings.json"))).toBe(true);
+    expect(existsSync(join(qoderRoot(".qoder-cn"), "settings.json"))).toBe(true);
+  });
+
+  it("does not create a Qoder root when none exists", async () => {
+    const { code, output } = await runMain(["init"]);
+
+    expect(code).toBe(0);
+    expect(output).toContain("Qoder not detected");
+    expect(existsSync(qoderRoot())).toBe(false);
+    expect(existsSync(qoderRoot(".qoder-cn"))).toBe(false);
+  });
+});
+
+describe("pocketpet up Qoder consent", () => {
+  function qoderSettings(): string {
+    return join(userHome, ".qoder", "settings.json");
+  }
+
+  it("skips Qoder hooks without a TTY and leaves settings untouched", async () => {
+    writeConfig(0);
+    mkdirSync(join(userHome, ".qoder"), { recursive: true });
+    const original = '{\n  "enabledPlugins": { "context": true }\n}\n';
+    writeFileSync(qoderSettings(), original);
+
+    const result = await spawnCli(["up", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+
+    expect(result.stdout).toContain("Qoder hooks: skipped (not a TTY; pass --yes or run `pocketpet init`)");
+    expect(readFileSync(qoderSettings(), "utf8")).toBe(original);
+  }, 30_000);
+
+  it("installs Qoder hooks with --yes and --no-service", async () => {
+    writeConfig(0);
+    mkdirSync(join(userHome, ".qoder"), { recursive: true });
+
+    const result = await spawnCli(["up", "--yes", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+
+    expect(result.stdout).toContain(`Qoder hooks added (${join(userHome, ".qoder")})`);
+    const settings = JSON.parse(readFileSync(qoderSettings(), "utf8"));
+    expect(Object.keys(settings.hooks).sort()).toEqual([...QODER_HOOK_EVENTS].sort());
+  }, 30_000);
+
+  it("skips Qoder hooks with --no-hooks and does not create the settings file", async () => {
+    writeConfig(0);
+    mkdirSync(join(userHome, ".qoder"), { recursive: true });
+
+    const result = await spawnCli(["up", "--no-hooks", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+
+    expect(result.stdout).toContain("Qoder hooks: skipped (--no-hooks)");
+    expect(existsSync(qoderSettings())).toBe(false);
+  }, 30_000);
+
+  it("does not mention or create Qoder when no root exists", async () => {
+    writeConfig(0);
+
+    const result = await spawnCli(["up", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+
+    expect(result.stdout).not.toContain("Qoder hooks");
+    expect(existsSync(join(userHome, ".qoder"))).toBe(false);
+  }, 30_000);
 });

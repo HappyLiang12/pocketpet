@@ -12,7 +12,7 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge
 
 - Zero-install phone page: scan one QR, add it to the home screen, keep it charging.
 - Folded outer screen shows a clock + pet; unfolding gives a wide stage with per-agent session cards.
-- Live states from Claude Code (M1), with Qoder/Codex/OpenCode/Pi adapters on the roadmap.
+- Live states from Claude Code and Qoder (M1/M3), with Codex/OpenCode/Pi adapters on the roadmap.
 - Petdex pets: gallery search, capped picker, local installs, custom `pet.json` + spritesheet.
 - One-command onboarding (`pocketpet up`), optional launchd login service, USB fallback.
 - English, Traditional Chinese, and Simplified Chinese UI; an in-page debug panel and connection troubleshooting.
@@ -22,7 +22,7 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge
 
 - macOS with Node.js >= 20.6
 - Phone on the same WiFi as the Mac (USB fallback below for different networks)
-- Claude Code for the M1 adapter
+- Claude Code and/or Qoder for the adapters (hooks are installed only into roots that already exist)
 
 ## Quick start
 
@@ -36,7 +36,7 @@ pocketpet up
 `pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]` is the one-command first run:
 
 1. Creates `~/.pocketpet/config.json` if it is missing (directory 0700, file 0600) and prints the path — never the token.
-2. Asks `Install Claude Code hooks? [Y/n]` when stdin is a terminal. `--yes` installs without asking, `--no-hooks` skips, and a non-TTY run skips with a reminder to run `pocketpet init` later. Existing settings and third-party hooks are preserved.
+2. Asks `Install Claude Code hooks? [Y/n]` when stdin is a terminal. `--yes` installs without asking, `--no-hooks` skips, and a non-TTY run skips with a reminder to run `pocketpet init` later. Existing settings and third-party hooks are preserved. If `~/.qoder` or `~/.qoder-cn` exists, it asks the same question for Qoder; an absent Qoder root is never created.
 3. Asks `Start bridge at login? [y/N]` (default no). Answering yes, or passing `--yes`, installs the `dev.pocketpet.bridge` LaunchAgent. Otherwise the bridge runs in the foreground until Ctrl+C; `--no-service` skips the question. If a bridge already answers on the configured port, `up` reprints the pairing details and reopens `/setup`.
 4. Prints every LAN URL plus a full-size terminal QR code (first IPv4 address by default) and the three phone steps.
 5. Opens `http://127.0.0.1:<port>/setup` in the Mac browser: a loopback-only page with the **IP** QR, the URLs, and USB instructions. The page always shows the IP QR, so `--qr-host local` only changes the terminal QR. `--no-open` keeps the page closed.
@@ -66,6 +66,12 @@ pocketpet service uninstall  # stops it and removes the plist
 ```
 
 The service runs `<node> <dist/cli.js> run --service`, which prints only `PocketPet bridge listening on port N`. The token, URLs, and QR never reach the service log `~/.pocketpet/logs/bridge.log` (file 0600, directory 0700). Run `pocketpet up` again while the service is running to reprint the QR and reopen `/setup`. A source `.ts` entry point is refused; install the service from the built `dist/cli.js`.
+
+### Qoder adapter
+
+`pocketpet init` and `pocketpet up` wire Qoder user-level hooks into every existing root (`~/.qoder/settings.json` and `~/.qoder-cn/settings.json`) and never create a root that was not already there. The compiled CLI writes an absolute `<node> <dist/cli.js> hook qoder` command because the Qoder GUI may not inherit the shell `PATH`; a source (tsx) run falls back to the linked `pocketpet hook qoder`. Existing settings, foreign hooks, and `hooksConfig` are left untouched.
+
+Verification gate: Qoder desktop 0.5.17 has not yet been observed executing a hand-written user-level hook. Its plugin hooks do execute, and the user-level path is documented, but the end-to-end payload is unverified. Install Qoder hooks with consent, run a Qoder task, and confirm the phone pet reacts before treating Qoder support as fully shipped. See `docs/research/qoder-events.md` and `docs/acceptance/m3-qoder-manual.md` (result: NOT RUN).
 
 ### Port
 
@@ -97,14 +103,15 @@ PocketPet scans three local roots in order: `~/.pocketpet/pets`, `~/.codex/pets`
 
 - `pocketpet up` — first-run setup: config, hooks consent, optional login service, full-size QR, `/setup`
 - `pocketpet service install|uninstall|status` — manage the launchd login item
-- `pocketpet init` — create config and Claude hooks (still available for scripted setup)
+- `pocketpet init` — create config and Claude/Qoder hooks (still available for scripted setup)
 - `pocketpet run` — start the bridge in the foreground and print the QR; auto-creates a missing config and reminds you that hooks need `init`
-- `pocketpet doctor` — check config, hooks, pets, port
+- `pocketpet doctor` — check config, Claude/Qoder hooks, pets, port
 - `pocketpet hook claude` — internal; called by Claude Code hooks
+- `pocketpet hook qoder` — internal; called by Qoder hooks
 
 ## Status
 
-Current: M1 + onboarding. One-command setup (`pocketpet up`), loopback `/setup` pairing, launchd login service, Claude Code adapter, foldable folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`.
+Current: M1 + onboarding + Qoder adapter. One-command setup (`pocketpet up`), loopback `/setup` pairing, launchd login service, Claude Code and Qoder adapters, foldable folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. The Qoder adapter is implemented, but Qoder desktop 0.5.17 executing a hand-written user-level hook is still a verification gate with the real app (NOT RUN). Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`.
 
 ## Troubleshooting
 

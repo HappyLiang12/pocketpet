@@ -7,7 +7,7 @@ Rules:
 - The tester records the result in this file (or in the task/issue that links to it). **Do not infer a pass from unit tests, Playwright tests, or code inspection.** Automated tests are necessary but do not replace these manual checks.
 - `PASS` requires the evidence described for that item. `FAIL` requires the observed result. `BLOCKED` requires the blocker. Anything else stays `NOT RUN`.
 - Keep screenshots free of the bridge token. The QR/URL contains `?token=...`; crop the address bar or the `/setup` page before attaching a screenshot.
-- M1 acceptance does not require Qoder. Qoder is the M3 adapter gated by `docs/research/qoder-events.md`.
+- M1 acceptance does not require Qoder. The Qoder adapter is implemented in M3; its real-app manual verification is tracked in `docs/acceptance/m3-qoder-manual.md` and remains NOT RUN.
 
 ## Preconditions
 
