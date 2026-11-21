@@ -89,7 +89,7 @@ export class PetRenderer {
       ctx.drawImage(this.image, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, this.canvas.width, this.canvas.height);
       return;
     }
-    const bob = Math.sin(now / 500) * (this.state === "idle" ? 3 : 1);
+    const bob = this.reduced ? 0 : Math.sin(now / 500) * (this.state === "idle" ? 3 : 1);
     ctx.fillStyle = this.state === "failed" ? "#ef4444" : this.state === "waiting" ? "#f59e0b" : "#7dd3fc";
     ctx.fillRect(56, 72 + bob, 80, 80);
     ctx.fillStyle = "#0f172a";
