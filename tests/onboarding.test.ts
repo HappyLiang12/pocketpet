@@ -103,6 +103,9 @@ describe("setupHtml", () => {
     expect(html).toContain("加到主畫面");
     expect(html).toContain("可以重複使用");
     expect(html).toContain("只供 Mac");
+    expect(html).toContain("ERR_TOO_MANY_RETRIES");
+    expect(html).toContain("unauthorized");
+    expect(html).toContain("Always use secure connections");
     expect(html).toContain("Bonjour");
     expect(html).toContain("adb reverse tcp:7788 tcp:7788");
     expect(html).toContain("http://127.0.0.1:7788/?token=tok");

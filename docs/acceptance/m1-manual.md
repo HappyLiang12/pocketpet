@@ -326,6 +326,8 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 - Android and iOS results are recorded separately as PASS/FAIL with the observed behavior. A failure is a finding, not a reason to relax this checklist.
 - No step used `adb reverse`; no token appears in any pasted output or screenshot.
 
+**Note (browser forcing HTTPS):** if a phone shows `ERR_TOO_MANY_RETRIES`/`ERR_SSL_PROTOCOL_ERROR`, disable Chrome/Edge “Always use secure connections” or VPN/iCloud Private Relay, or use Safari/Firefox; the LAN bridge is HTTP-only. Record the result.
+
 **Note (stale token when a service already runs):** if a bridge is already listening on the configured port from a different `FOLDPET_HOME`, `fold-pet up` treats it as running and can print pairing details from the other config, so the printed token is stale and the scan fails. Either uninstall that service first, or use `--no-service` with a fresh `FOLDPET_HOME` and a distinct `FOLDPET_PORT` so the config and port belong together.
 
 **Producer of evidence:** tester, `fold-pet up` stdout with tokens redacted, a Mac `/setup` screenshot with the QR/URLs cropped, and phone screenshots of the loaded page, address bar, drawer hint, and home-screen launch for both Android and iOS.

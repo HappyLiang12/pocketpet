@@ -175,6 +175,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 - 頁面載入後以 `history.replaceState` 移除 `?token=`，地址欄與其後書籤只剩 `/`；API、WebSocket 與重新載入都靠 HttpOnly cookie，token 不再出現在畫面或瀏覽歷史。
 - 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.foldpet.installHintDismissed`）。
 - 同一個 QR 可重複使用（非一次性）：每部手機各自掃一次，直到 token 更改。`/setup` 只供 Mac（非 loopback／錯 Host 顯示 Mac-only 403）；手機開 `/setup` 唔會配對；配對後地址欄只剩 `/`，該 URL 無 token，不能作配對分享。
+- LAN bridge 係 HTTP-only：Chrome／Edge 嘅 HTTPS-First 會令手機出現 `ERR_TOO_MANY_RETRIES`／`ERR_SSL_PROTOCOL_ERROR`；troubleshooting 指示關閉該設定或改用 Safari／Firefox，並關 VPN／Private Relay。本機 HTTPS／tunnel 留待 M3。
 
 ### launchd 登入服務
 

@@ -147,6 +147,7 @@ export function setupHtml(input: SetupHtmlInput): string {
   ul { list-style: none; padding: 0; }
   ul li { background: #fff; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
   .usb { border-top: 1px solid #ddd6c8; margin-top: 32px; }
+  .troubleshoot { border-top: 1px solid #ddd6c8; margin-top: 28px; padding-top: 8px; }
   pre { background: #24211c; color: #f6f4ef; border-radius: 10px; padding: 12px; overflow-x: auto; }
   pre code { font-size: 0.85rem; }
   .note { color: #6b655d; font-size: 0.9rem; margin-top: 28px; }
@@ -154,7 +155,7 @@ export function setupHtml(input: SetupHtmlInput): string {
     body { background: #171512; color: #f3efe7; }
     .lead, .note { color: #b3aca2; }
     .qr, ul li { background: #24211c; }
-    .usb { border-color: #3a352e; }
+    .usb, .troubleshoot { border-color: #3a352e; }
   }
 </style>
 </head>
@@ -180,6 +181,16 @@ ${localSection}
     <p>用 USB 線連接手機同 Mac，然後喺電腦執行：</p>
     <pre><code>adb reverse tcp:${port} tcp:${port}</code></pre>
     <p>再用手機開 <code>${escapeHtml(usbUrl)}</code>。</p>
+  </section>
+
+  <section class="troubleshoot">
+    <h2>手機連唔到？</h2>
+    <ul>
+      <li><strong>ERR_TOO_MANY_RETRIES／ERR_SSL_PROTOCOL_ERROR</strong>：Chrome／Edge 嘅「Always use secure connections（永遠使用安全連線）」或 VPN 會將 <code>http</code> 升級做 <code>https</code>。關閉該設定，或改用 Safari／Firefox；iPhone 亦要關 VPN／iCloud Private Relay。</li>
+      <li><strong>unauthorized</strong>：你開咗冇 token 嘅 <code>/</code>。請掃 QR，或用上面列出嘅帶 token 網址。</li>
+      <li><strong>配對頁只限 Mac</strong>：<code>/setup</code> 只供 Mac；手機請掃 QR。</li>
+      <li><strong>完全連唔到</strong>：確認手機同 Mac 同一個 Wi-Fi／subnet（guest network／AP isolation 唔得）；必要時用上面的 USB <code>adb reverse</code>。</li>
+    </ul>
   </section>
 
   <p class="note"><strong>同一個 QR 可以重複使用</strong>：每部手機各自掃一次，直到你更改 token 為止。</p>

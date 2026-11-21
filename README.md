@@ -90,6 +90,13 @@ FoldPet scans three local roots in order: `~/.fold-pet/pets`, `~/.codex/pets`, t
 
 M1: one-command onboarding (`fold-pet up`), loopback `/setup` pairing page, launchd login service, Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-fold-pet-design.md`.
 
+## Troubleshooting
+
+- `ERR_TOO_MANY_RETRIES` / `ERR_SSL_PROTOCOL_ERROR`: the phone browser is forcing HTTPS (Chrome/Edge “Always use secure connections”), or a VPN/proxy is intercepting. Turn that setting off, try Safari/Firefox, or disable VPN/iCloud Private Relay. The LAN bridge is HTTP-only; local HTTPS/tunnel is a later option.
+- `unauthorized`: you opened the cleaned `/` URL without the token. Scan the QR or use the tokenized URL listed on `/setup`.
+- `配對頁只限 Mac` / Mac-only page: `/setup` must be opened on the Mac; phones scan the QR.
+- Can't reach the Mac at all: confirm the phone is on the same WiFi/subnet (guest networks and AP isolation block it); otherwise use USB `adb reverse`.
+
 ## Security
 
 Events are accepted only from loopback. The phone API requires the per-install token; the QR carries it once, the browser stores it as an HttpOnly cookie for one year (so a browser restart does not require a rescan), and the page removes `?token=` from the address bar after load. The token still appears in the terminal output and on the loopback-only `/setup` page, and the service log never contains it; avoid sharing screenshots that show the QR, URLs, or setup page. `/setup` is not cached (`Cache-Control: no-store`). No cloud, no telemetry. Events contain agent/session/project/tool names only — never code, prompts, or outputs.
