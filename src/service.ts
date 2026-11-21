@@ -121,7 +121,7 @@ export async function uninstallService(cfg: ServiceConfig, runner: LaunchctlRunn
   if (existsSync(plistPath)) rmSync(plistPath);
 }
 
-export function serviceStatus(runner: LaunchctlRunner = defaultRunner): boolean {
+export async function serviceStatus(cfg: ServiceConfig, runner: LaunchctlRunner = defaultRunner): Promise<boolean> {
   try {
     return runner(["print", `gui/${currentUid()}/${SERVICE_LABEL}`]).status === 0;
   } catch {

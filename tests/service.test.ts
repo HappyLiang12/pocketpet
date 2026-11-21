@@ -166,21 +166,24 @@ describe("uninstallService", () => {
 });
 
 describe("serviceStatus", () => {
-  it("returns true when launchctl print succeeds", () => {
+  it("returns true when launchctl print succeeds", async () => {
+    const cfg = setupConfig();
     const { calls, runner } = fakeRunner([0]);
-    expect(serviceStatus(runner)).toBe(true);
+    expect(await serviceStatus(cfg, runner)).toBe(true);
     expect(calls).toEqual([["print", labelTarget]]);
   });
 
-  it("returns false on non-zero status", () => {
+  it("returns false on non-zero status", async () => {
+    const cfg = setupConfig();
     const { runner } = fakeRunner([113]);
-    expect(serviceStatus(runner)).toBe(false);
+    expect(await serviceStatus(cfg, runner)).toBe(false);
   });
 
-  it("returns false when the runner throws", () => {
+  it("returns false when the runner throws", async () => {
+    const cfg = setupConfig();
     const runner: LaunchctlRunner = () => {
       throw new Error("launchctl missing");
     };
-    expect(serviceStatus(runner)).toBe(false);
+    expect(await serviceStatus(cfg, runner)).toBe(false);
   });
 });
