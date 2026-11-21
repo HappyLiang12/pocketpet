@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const CLAUDE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "SubagentStop", "Stop", "SessionEnd"] as const;
@@ -57,7 +57,10 @@ export function installClaudeHooks(settingsPath: string, command = HOOK_COMMAND)
   }
 
   settings.hooks = hooks;
+  if (added.length === 0) return { added, already };
   mkdirSync(dirname(settingsPath), { recursive: true });
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+  const tmpPath = `${settingsPath}.tmp`;
+  writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + "\n");
+  renameSync(tmpPath, settingsPath);
   return { added, already };
 }

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -66,5 +66,19 @@ describe("installClaudeHooks", () => {
     const file = join(dir, "settings.json");
     writeFileSync(file, "null");
     expect(() => installClaudeHooks(file)).toThrow(/invalid Claude settings/);
+  });
+
+  it("leaves the file untouched when every hook is already installed", async () => {
+    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const file = join(dir, "settings.json");
+    installClaudeHooks(file);
+    const content = readFileSync(file, "utf8");
+    const mtime = statSync(file).mtimeMs;
+    expect(existsSync(`${file}.tmp`)).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(installClaudeHooks(file).added).toEqual([]);
+    expect(readFileSync(file, "utf8")).toBe(content);
+    expect(statSync(file).mtimeMs).toBe(mtime);
+    expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 });

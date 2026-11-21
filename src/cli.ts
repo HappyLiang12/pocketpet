@@ -1,18 +1,58 @@
 #!/usr/bin/env node
 import { appendFileSync, existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { foldPetHome, loadConfig } from "./config.js";
+import { foldPetHome, loadConfig, type Config } from "./config.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 
 const HOOK_TIMEOUT_MS = 500;
 const MAX_LOG_BYTES = 1_000_000;
+export const MAX_STDIN_BYTES = 256 * 1024;
+export const STDIN_TIMEOUT_MS = 1000;
 
-async function readStdin(): Promise<string> {
-  if (process.stdin.isTTY) return "";
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
+export type ReadStdinOptions = { maxBytes?: number; timeoutMs?: number };
+
+/**
+ * Reads a hook payload from `input` with a hard size cap and an overall
+ * deadline. Returns `null` when either trips so the hook can exit cleanly
+ * without posting, instead of blocking the agent on an open pipe.
+ */
+export async function readStdin(input: Readable = process.stdin, opts: ReadStdinOptions = {}): Promise<string | null> {
+  if ((input as Readable & { isTTY?: boolean }).isTTY) return "";
+  const maxBytes = opts.maxBytes ?? MAX_STDIN_BYTES;
+  const timeoutMs = opts.timeoutMs ?? STDIN_TIMEOUT_MS;
+  return await new Promise<string | null>((resolve) => {
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    let timer: NodeJS.Timeout;
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      input.off("data", onData);
+      input.off("end", onEnd);
+      input.off("error", onError);
+      if (value === null) input.pause();
+      resolve(value);
+    };
+    const onData = (chunk: Buffer | string) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.length;
+      if (bytes > maxBytes) {
+        finish(null);
+        return;
+      }
+      chunks.push(buffer);
+    };
+    const onEnd = () => finish(Buffer.concat(chunks).toString("utf8"));
+    const onError = () => finish(null);
+    timer = setTimeout(() => finish(null), timeoutMs);
+    input.on("data", onData);
+    input.on("end", onEnd);
+    input.on("error", onError);
+  });
 }
 
 /**
@@ -48,7 +88,7 @@ export async function runHook(agent: string): Promise<void> {
   const home = foldPetHome();
   try {
     const raw = await readStdin();
-    if (!raw.trim()) return;
+    if (raw === null || !raw.trim()) return;
     let payload: unknown;
     try {
       payload = JSON.parse(raw);
@@ -59,7 +99,14 @@ export async function runHook(agent: string): Promise<void> {
     }
     const event = mapClaudeHook(payload);
     if (!event) return;
-    const config = loadConfig(home);
+    let config: Config;
+    try {
+      config = loadConfig(home);
+    } catch {
+      // Do not log the config error: Node's JSON.parse message may quote the token.
+      logHookError(home, "config unreadable");
+      return;
+    }
     const response = await fetch(`http://127.0.0.1:${config.port}/api/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
