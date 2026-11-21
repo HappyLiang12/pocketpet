@@ -43,6 +43,7 @@ describe("pairingLinks", () => {
     ]);
     expect(links.localUrl).toBe("http://happy-mac.local:7788/?token=tok");
     expect(links.qrUrl).toBe("http://192.168.1.5:7788/?token=tok");
+    expect(links.usbUrl).toBe("http://127.0.0.1:7788/?token=tok");
   });
 
   it("uses the .local URL for the QR when qrHost is local", () => {
@@ -60,21 +61,23 @@ describe("pairingLinks", () => {
     expect(links.qrUrl).toBe("http://192.168.1.5:7788/?token=tok");
   });
 
-  it("encodes the token in both IP and .local URLs", () => {
+  it("encodes the token in the IP, .local and USB URLs", () => {
     const links = pairingLinks(7788, "a b&c", { interfaces: fakeIfaces, hostname: "happy-mac.local" });
     expect(links.ipUrls[0]).toBe("http://192.168.1.5:7788/?token=a%20b%26c");
     expect(links.localUrl).toBe("http://happy-mac.local:7788/?token=a%20b%26c");
+    expect(links.usbUrl).toBe("http://127.0.0.1:7788/?token=a%20b%26c");
   });
 
-  it("returns null QR and local URLs when no LAN address exists", () => {
+  it("returns null QR and local URLs but keeps the tokenized USB URL when no LAN address exists", () => {
     const links = pairingLinks(7788, "tok", { interfaces: {} as never, hostname: null });
-    expect(links).toEqual({ ipUrls: [], localUrl: null, qrUrl: null });
+    expect(links).toEqual({ ipUrls: [], localUrl: null, qrUrl: null, usbUrl: "http://127.0.0.1:7788/?token=tok" });
   });
 
   it("keeps the QR null with no IP even when a .local name exists and qrHost is ip", () => {
     const links = pairingLinks(7788, "tok", { interfaces: {} as never, hostname: "happy-mac.local" });
     expect(links.localUrl).toBe("http://happy-mac.local:7788/?token=tok");
     expect(links.qrUrl).toBeNull();
+    expect(links.usbUrl).toBe("http://127.0.0.1:7788/?token=tok");
   });
 });
 
@@ -101,6 +104,26 @@ describe("setupHtml", () => {
     expect(html).toContain("Bonjour");
     expect(html).toContain("adb reverse tcp:7788 tcp:7788");
     expect(html).toContain("http://127.0.0.1:7788/?token=tok");
+  });
+
+  it("uses an explicit usbUrl, keeping the token even when no LAN URL exists", () => {
+    const html = setupHtml({
+      qrSvg: "",
+      ipUrls: [],
+      localUrl: null,
+      port: 7788,
+      usbUrl: "http://127.0.0.1:7788/?token=a%20b%26c",
+    });
+    expect(html).toContain("http://127.0.0.1:7788/?token=a%20b%26c");
+    expect(html).toContain("adb reverse tcp:7788 tcp:7788");
+  });
+
+  it("omits the QR card and shows a QR-unavailable note when the SVG is empty", () => {
+    const html = setupHtml({ ...base, qrSvg: "" });
+    expect(html).not.toContain('class="qr"');
+    expect(html).not.toContain("對準上面嘅 QR code");
+    expect(html).toContain("QR code 暫時無法產生");
+    expect(html).toContain("http://192.168.1.5:7788/?token=tok");
   });
 
   it("omits the .local section when no hostname is available", () => {

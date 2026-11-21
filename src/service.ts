@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -96,7 +96,11 @@ export async function installService(cfg: ServiceConfig, runner: LaunchctlRunner
 
   const logsDir = join(cfg.home, "logs");
   mkdirSync(logsDir, { recursive: true, mode: 0o700 });
-  writeFileSync(join(logsDir, "bridge.log"), "", { flag: "a", mode: 0o600 });
+  const logPath = join(logsDir, "bridge.log");
+  writeFileSync(logPath, "", { flag: "a", mode: 0o600 });
+  // Creation modes are ignored for paths that already exist, so tighten them explicitly.
+  chmodSync(logPath, 0o600);
+  chmodSync(logsDir, 0o700);
 
   const plistPath = resolvePlistPath(cfg);
   const plistDir = dirname(plistPath);

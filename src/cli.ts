@@ -10,7 +10,7 @@ import { configPath, ensureConfig, foldPetHome, loadConfig, type Config } from "
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 import { doctorChecks } from "./doctor.js";
-import { askYesNo, localHostname, pairingLinks, type QrHost } from "./onboarding.js";
+import { askYesNo, localHostname, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
 import { SERVICE_LABEL, installService, serviceStatus, uninstallService, type ServiceConfig } from "./service.js";
 import { startBridge, type Bridge } from "./server.js";
 
@@ -137,8 +137,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** True when every FoldPet hook event is wired in the Claude settings file. */
-function hasFoldPetHooks(settingsPath: string): boolean {
+/** True when every FoldPet hook event is wired as a command hook in the Claude settings file. */
+export function hasFoldPetHooks(settingsPath: string): boolean {
   if (!existsSync(settingsPath)) return false;
   let parsed: unknown;
   try {
@@ -152,7 +152,10 @@ function hasFoldPetHooks(settingsPath: string): boolean {
     const entries = hooks[event];
     if (!Array.isArray(entries)) return false;
     return entries.some(
-      (entry) => isRecord(entry) && Array.isArray(entry.hooks) && entry.hooks.some((hook) => isRecord(hook) && hook.command === HOOK_COMMAND),
+      (entry) =>
+        isRecord(entry) &&
+        Array.isArray(entry.hooks) &&
+        entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && hook.command === HOOK_COMMAND),
     );
   });
 }
@@ -243,7 +246,15 @@ function parseUpOptions(args: string[]): UpOptions | null {
   return options;
 }
 
-type PairingOutput = { port: number; token: string; qrHost: QrHost; open: boolean; keepRunning: boolean };
+export type PairingOutput = {
+  port: number;
+  token: string;
+  qrHost: QrHost;
+  open: boolean;
+  keepRunning: boolean;
+  /** Test hook: overrides the detected LAN interfaces. */
+  interfaces?: InterfaceMap;
+};
 
 function openSetupPage(port: number): void {
   try {
@@ -254,8 +265,12 @@ function openSetupPage(port: number): void {
 }
 
 /** Pairing URLs, a full-size terminal QR, the fallback, and the three phone steps. */
-function printPairing(options: PairingOutput): void {
-  const links = pairingLinks(options.port, options.token, { hostname: localHostname(), qrHost: options.qrHost });
+export function printPairing(options: PairingOutput): void {
+  const links = pairingLinks(options.port, options.token, {
+    hostname: localHostname(),
+    qrHost: options.qrHost,
+    interfaces: options.interfaces,
+  });
   if (links.ipUrls.length === 0) console.log("No LAN IPv4 address found.");
   for (const url of links.ipUrls) console.log(url);
   if (links.localUrl) console.log(links.localUrl);
@@ -264,13 +279,20 @@ function printPairing(options: PairingOutput): void {
   } else {
     console.log("USB fallback (no LAN URL):");
     console.log(`  adb reverse tcp:${options.port} tcp:${options.port}`);
-    console.log(`  then open http://127.0.0.1:${options.port}/?token=${encodeURIComponent(options.token)} on your phone`);
+    console.log(`  then open ${links.usbUrl} on your phone`);
   }
   console.log("三步完成配對：");
   console.log("  1. 同一個 Wi-Fi：確認 Mac 同手機連住同一個 Wi-Fi 網絡。");
-  console.log("  2. 用相機掃描：打開手機相機，對準上面嘅 QR code。");
+  if (links.qrUrl) console.log("  2. 用相機掃描：打開手機相機，對準上面嘅 QR code。");
+  else console.log("  2. 開啟網址：喺手機瀏覽器打開上面其中一個區網網址。");
   console.log("  3. 加到主畫面：喺瀏覽器選單揀「加到主畫面」，之後一開即用。");
-  console.log(options.keepRunning ? "Bridge keeps running in the background." : "Scan the QR code on your phone. Ctrl+C to stop.");
+  console.log(
+    options.keepRunning
+      ? "Bridge keeps running in the background."
+      : links.qrUrl
+        ? "Scan the QR code on your phone. Ctrl+C to stop."
+        : "Open the USB URL on your phone. Ctrl+C to stop.",
+  );
   if (options.open) openSetupPage(options.port);
 }
 
@@ -372,6 +394,13 @@ async function runUp(args: string[]): Promise<number> {
   return 0;
 }
 
+/** Fixed, token-free service error; the compiled-CLI refusal is safe to echo verbatim. */
+function serviceFailureMessage(action: "install" | "uninstall", error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
+  return `Could not ${action} the bridge service (${SERVICE_LABEL}). Build the CLI with \`npm run build\` and retry \`fold-pet service ${action}\`.${refusal}`;
+}
+
 async function runService(action: string | undefined): Promise<number> {
   if (action !== "install" && action !== "uninstall" && action !== "status") {
     console.error(SERVICE_USAGE);
@@ -386,12 +415,23 @@ async function runService(action: string | undefined): Promise<number> {
   }
   const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url) };
   if (action === "install") {
-    await installService(serviceConfig);
+    try {
+      await installService(serviceConfig);
+    } catch (error) {
+      // The refusal message names the CLI path, never the token.
+      console.error(serviceFailureMessage("install", error));
+      return 1;
+    }
     console.log(`Installed ${SERVICE_LABEL}. The bridge starts at login and keeps running.`);
     return 0;
   }
   if (action === "uninstall") {
-    await uninstallService(serviceConfig);
+    try {
+      await uninstallService(serviceConfig);
+    } catch (error) {
+      console.error(serviceFailureMessage("uninstall", error));
+      return 1;
+    }
     console.log(`Removed ${SERVICE_LABEL}.`);
     return 0;
   }

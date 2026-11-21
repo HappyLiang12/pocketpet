@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -123,6 +123,22 @@ describe("installService", () => {
     const { runner } = fakeRunner();
     await installService(cfg, runner);
     expect(readFileSync(join(cfg.home, "logs", "bridge.log"), "utf8")).toBe("previous run\n");
+  });
+
+  it.skipIf(process.platform === "win32")("tightens pre-existing lax log and directory modes", async () => {
+    const cfg = setupConfig();
+    const logPath = join(cfg.home, "logs", "bridge.log");
+    mkdirSync(join(cfg.home, "logs"), { recursive: true });
+    writeFileSync(logPath, "previous run\n");
+    chmodSync(join(cfg.home, "logs"), 0o755);
+    chmodSync(logPath, 0o644);
+
+    const { runner } = fakeRunner();
+    await installService(cfg, runner);
+
+    assertMode(logPath, 0o600);
+    assertMode(join(cfg.home, "logs"), 0o700);
+    expect(readFileSync(logPath, "utf8")).toBe("previous run\n");
   });
 
   it("refuses a TypeScript CLI path", async () => {

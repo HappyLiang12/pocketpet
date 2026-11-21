@@ -16,6 +16,8 @@ export type PairingLinks = {
   ipUrls: string[];
   localUrl: string | null;
   qrUrl: string | null;
+  /** Loopback URL for the USB (`adb reverse`) fallback; always carries the token. */
+  usbUrl: string;
 };
 
 export type SetupHtmlInput = {
@@ -23,6 +25,8 @@ export type SetupHtmlInput = {
   ipUrls: string[];
   localUrl: string | null;
   port: number;
+  /** Overrides the USB fallback URL; the setup route passes the tokenized one. */
+  usbUrl?: string | null;
 };
 
 export type Asker = (question: string) => Promise<string>;
@@ -55,7 +59,8 @@ export function pairingLinks(port: number, token: string, opts: PairingLinksOpti
   const hostname = opts.hostname?.trim();
   const localUrl = hostname ? pairingUrl(hostname, port, token) : null;
   const qrUrl = opts.qrHost === "local" && localUrl ? localUrl : (ipUrls[0] ?? null);
-  return { ipUrls, localUrl, qrUrl };
+  const usbUrl = pairingUrl("127.0.0.1", port, token);
+  return { ipUrls, localUrl, qrUrl, usbUrl };
 }
 
 function escapeHtml(value: string): string {
@@ -91,9 +96,18 @@ export function setupHtml(input: SetupHtmlInput): string {
       </ul>`
     : "";
   const token = tokenFromUrl(ipUrls[0]) ?? tokenFromUrl(localUrl);
-  const usbUrl = token
-    ? `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
-    : `http://127.0.0.1:${port}/`;
+  const usbUrl =
+    input.usbUrl ??
+    (token
+      ? `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
+      : `http://127.0.0.1:${port}/`);
+  const qrSection = qrSvg
+    ? `  <p class="lead">用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 FoldPet。</p>
+  <div class="qr">${qrSvg}</div>`
+    : `  <p class="lead">QR code 暫時無法產生（伺服器未能建立）。你仍然可以用下面嘅區網網址，或者用 USB 連接打開 FoldPet。</p>`;
+  const scanStep = qrSvg
+    ? `    <li><strong>用相機掃描</strong>：打開手機相機，對準上面嘅 QR code。</li>`
+    : `    <li><strong>開啟網址</strong>：喺手機瀏覽器打開上面其中一個區網網址。</li>`;
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -147,13 +161,12 @@ export function setupHtml(input: SetupHtmlInput): string {
 <body>
 <main>
   <h1>FoldPet 配對</h1>
-  <p class="lead">用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 FoldPet。</p>
-  <div class="qr">${qrSvg}</div>
+${qrSection}
 
   <h2>三步完成配對</h2>
   <ol>
     <li><strong>同一個 Wi-Fi</strong>：確認 Mac 同手機連住同一個 Wi-Fi 網絡。</li>
-    <li><strong>用相機掃描</strong>：打開手機相機，對準上面嘅 QR code。</li>
+${scanStep}
     <li><strong>加到主畫面</strong>：喺瀏覽器選單揀「加到主畫面」，之後一開即用。</li>
   </ol>
 

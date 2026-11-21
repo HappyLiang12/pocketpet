@@ -6,7 +6,11 @@ import { configPath, ensureConfig, loadConfig, saveConfig } from "../src/config.
 
 let home = "";
 let savedPort: string | undefined;
-beforeEach(() => { savedPort = process.env.FOLDPET_PORT; });
+beforeEach(() => {
+  savedPort = process.env.FOLDPET_PORT;
+  // An ambient FOLDPET_PORT from the developer shell must not change the default-port expectations.
+  delete process.env.FOLDPET_PORT;
+});
 afterEach(() => {
   if (savedPort === undefined) delete process.env.FOLDPET_PORT;
   else process.env.FOLDPET_PORT = savedPort;

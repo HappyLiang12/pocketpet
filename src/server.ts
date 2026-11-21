@@ -158,7 +158,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
             qrSvg = "";
           }
         }
-        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port });
+        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port, usbUrl: links.usbUrl });
         res.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",

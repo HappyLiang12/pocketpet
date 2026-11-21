@@ -5,7 +5,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main } from "../src/cli.js";
+import { main, hasFoldPetHooks, printPairing } from "../src/cli.js";
+import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
 
 let home = "";
@@ -120,6 +121,19 @@ describe("fold-pet up and forgiving run", () => {
     expect(result.signal ?? result.code).not.toBeNull();
   }, 30_000);
 
+  it("skips hooks without a TTY and leaves unrelated Claude settings byte-identical", async () => {
+    writeConfig(0);
+    const settingsPath = join(claudeDir, "settings.json");
+    const original = '{\n  "permissions": { "allow": ["Bash(ls)"] },\n  "env": { "FOO": "bar" }\n}\n';
+    writeFileSync(settingsPath, original);
+
+    const result = await spawnCli(["up", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+
+    expect(result.stdout).toContain("Claude Code hooks: skipped (not a TTY; pass --yes or run `fold-pet init`)");
+    expect(readFileSync(settingsPath, "utf8")).toBe(original);
+    expect(result.signal ?? result.code).not.toBeNull();
+  }, 30_000);
+
   it("run --service prints only the listening line and no tokenized URLs", async () => {
     writeConfig(0);
 
@@ -129,6 +143,55 @@ describe("fold-pet up and forgiving run", () => {
     expect(result.stdout).not.toContain("token=");
     expect(result.stdout).not.toContain("http://");
   }, 30_000);
+});
+
+describe("hasFoldPetHooks", () => {
+  function settingsWith(hook: unknown): string {
+    const file = join(claudeDir, "settings.json");
+    const hooks = Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [hook] }]]));
+    writeFileSync(file, JSON.stringify({ hooks }));
+    return file;
+  }
+
+  it("accepts a command hook for every event", () => {
+    expect(hasFoldPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }))).toBe(true);
+  });
+
+  it("requires hook.type to be command", () => {
+    expect(hasFoldPetHooks(settingsWith({ command: HOOK_COMMAND }))).toBe(false);
+    expect(hasFoldPetHooks(settingsWith({ type: "prompt", command: HOOK_COMMAND }))).toBe(false);
+  });
+
+  it("rejects a missing settings file and a settings file missing one event", () => {
+    expect(hasFoldPetHooks(join(claudeDir, "missing.json"))).toBe(false);
+
+    const file = join(claudeDir, "settings.json");
+    const hooks: Record<string, unknown> = Object.fromEntries(
+      CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: HOOK_COMMAND }] }]]),
+    );
+    delete hooks[CLAUDE_HOOK_EVENTS.at(-1)!];
+    writeFileSync(file, JSON.stringify({ hooks }));
+    expect(hasFoldPetHooks(file)).toBe(false);
+  });
+});
+
+describe("pairing output", () => {
+  it("prints the USB steps and a USB closing line when no LAN URL exists", () => {
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    });
+    try {
+      printPairing({ port: 7788, token: "tok", qrHost: "ip", open: false, keepRunning: false, interfaces: {} as never });
+    } finally {
+      log.mockRestore();
+    }
+    const output = lines.join("\n");
+    expect(output).toContain("adb reverse tcp:7788 tcp:7788");
+    expect(output).toContain("http://127.0.0.1:7788/?token=tok");
+    expect(output).toContain("USB URL on your phone");
+    expect(output).not.toContain("Scan the QR");
+  });
 });
 
 describe("fold-pet cli usage", () => {
@@ -148,6 +211,18 @@ describe("fold-pet cli usage", () => {
 });
 
 describe("fold-pet cli error handling", () => {
+  it("service install surfaces the compiled-CLI refusal without touching launchd", async () => {
+    const config = ensureConfig(home);
+
+    const { code, output } = await runMain(["service", "install"]);
+
+    expect(code).toBe(1);
+    expect(output).toContain("build and run the compiled CLI (dist/cli.js)");
+    expect(output).toContain("Could not install the bridge service");
+    expect(output).not.toContain(config.token);
+    expect(existsSync(join(home, "Library", "LaunchAgents", "dev.foldpet.bridge.plist"))).toBe(false);
+  });
+
   it("init fails without printing malformed config contents", async () => {
     writeFileSync(configPath(home), '{\n  "token": "SECRET_TOKEN_VALUE",\n  "port": 7788,\n');
 
