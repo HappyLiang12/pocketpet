@@ -74,4 +74,28 @@ describe("local pets", () => {
     const [pet] = scanLocalPets([root]);
     expect(pet && validateLocalPet(pet)).toMatchObject({ ok: false });
   });
+
+  it("reports a vanished spritesheet instead of throwing", () => {
+    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    mkdirSync(join(root, "good"), { recursive: true });
+    writeFileSync(join(root, "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
+    writeFileSync(join(root, "good", "spritesheet.png"), pngHeader(384, 468));
+    const [pet] = scanLocalPets([root]);
+    expect(pet).toBeDefined();
+    rmSync(join(pet!.dir, pet!.spriteFile));
+    const result = validateLocalPet(pet!);
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.error).toMatch(/^cannot read spritesheet \(/);
+  });
+
+  it("skips a source that is a file and still scans healthy dirs", () => {
+    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    mkdirSync(join(root, "pets", "good"), { recursive: true });
+    writeFileSync(join(root, "pets", "good", "pet.json"), JSON.stringify({ displayName: "Good" }));
+    writeFileSync(join(root, "pets", "good", "spritesheet.png"), pngHeader(384, 468));
+    const notADir = join(root, "not-a-dir");
+    writeFileSync(notADir, "");
+    expect(scanLocalPets([notADir, join(root, "pets")]).map((p) => p.id)).toEqual(["local:good"]);
+    expect(scanLocalPets([join(root, "pets"), notADir]).map((p) => p.id)).toEqual(["local:good"]);
+  });
 });

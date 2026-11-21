@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { join } from "node:path";
 
 export interface LocalPet {
@@ -39,7 +40,13 @@ export function scanLocalPets(dirs: string[]): LocalPet[] {
   const pets: LocalPet[] = [];
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
       if (!entry.isDirectory() || !SLUG_RE.test(entry.name)) continue;
       const petDir = join(dir, entry.name);
       const petJson = join(petDir, "pet.json");
@@ -59,7 +66,14 @@ export function scanLocalPets(dirs: string[]): LocalPet[] {
 }
 
 export function validateLocalPet(pet: LocalPet): { ok: true } | { ok: false; error: string } {
-  const size = readImageSize(readFileSync(join(pet.dir, pet.spriteFile)));
+  let buf: Buffer;
+  try {
+    buf = readFileSync(join(pet.dir, pet.spriteFile));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, error: `cannot read spritesheet (${message})` };
+  }
+  const size = readImageSize(buf);
   if (!size) return { ok: false, error: "unsupported spritesheet (need PNG or WebP)" };
   if (!detectAtlas(size.width, size.height)) return { ok: false, error: `spritesheet ${size.width}x${size.height} is not an 8x9 or 8x11 Petdex atlas` };
   return { ok: true };
