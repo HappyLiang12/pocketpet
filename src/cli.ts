@@ -127,7 +127,14 @@ export async function runHook(agent: string): Promise<void> {
 
 async function runInit(): Promise<number> {
   const home = foldPetHome();
-  ensureConfig(home);
+  try {
+    ensureConfig(home);
+  } catch {
+    // Never print the error: it may quote the malformed config, including the token.
+    console.error(`config unreadable: ${configPath(home)}`);
+    console.error("Fix or delete the file, then run `fold-pet init` again.");
+    return 1;
+  }
   const settingsPath = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
   const result = installClaudeHooks(settingsPath);
   console.log(`Config: ${configPath(home)}`);
@@ -169,12 +176,19 @@ async function runDoctor(): Promise<number> {
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const [command, arg] = argv;
-  if (command === "init") return runInit();
-  if (command === "run" || command === undefined) return runServer();
-  if (command === "doctor") return runDoctor();
-  if (command === "hook") {
-    await runHook(arg ?? "");
-    return 0;
+  try {
+    if (command === "init") return await runInit();
+    if (command === "run" || command === undefined) return await runServer();
+    if (command === "doctor") return await runDoctor();
+    if (command === "hook") {
+      await runHook(arg ?? "");
+      return 0;
+    }
+  } catch {
+    // Never print the thrown error: config parse messages or paths may carry secrets.
+    if (command === "hook") return 0;
+    console.error(`fold-pet: ${command ?? "run"} failed`);
+    return 1;
   }
   console.error("usage: fold-pet init | run | doctor | hook claude");
   return 2;
