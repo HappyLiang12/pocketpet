@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { ensureConfig } from "../src/config.js";
 import { startBridge, type Bridge } from "../src/server.js";
 
@@ -11,7 +12,11 @@ let home = "";
 let bridge: Bridge;
 let cookie = "";
 
+/** Spy for the Petdex manifest fetch so tests can prove when the catalog is (not) loaded. */
+const petdexFetch = vi.fn(async () => { throw new Error("offline"); });
+
 beforeEach(async () => {
+  petdexFetch.mockClear();
   home = mkdtempSync(join(tmpdir(), "pocketpet-"));
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
@@ -19,7 +24,7 @@ beforeEach(async () => {
   const config = ensureConfig(home);
   bridge = await startBridge({
     home, config, webDist, port: 0, localPetDirs: [join(home, "pets")],
-    fetchImpl: async () => { throw new Error("offline"); },
+    fetchImpl: petdexFetch,
   });
   const res = await fetch(`http://127.0.0.1:${bridge.port}/?token=${encodeURIComponent(config.token)}`);
   cookie = String(res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
@@ -215,6 +220,89 @@ describe("bridge server setup look API", () => {
     expect(state.appearance).toMatchObject({ theme: "light", clock: { scale: 140 } });
   });
 
+  it("applies a full appearance object", async () => {
+    const full = {
+      ...DEFAULT_APPEARANCE,
+      layout: { mode: "free" as const, gap: 24 },
+      clock: { x: 10, y: 12, scale: 80, format: "12h" as const },
+      theme: "light" as const,
+      motion: "reduced" as const,
+      sessions: { density: "compact" as const, maxVisible: 2, showProject: false, showTool: false, showElapsed: false },
+    };
+    const res = await setupJson("/api/setup/look", { method: "PUT", body: JSON.stringify({ appearance: full }) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).appearance).toEqual(normalizeAppearance(full));
+    expect(bridge.config.appearance).toEqual(normalizeAppearance(full));
+  });
+
+  it("merges a partial appearance over the current host look", async () => {
+    const arranged = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({
+        appearance: {
+          ...DEFAULT_APPEARANCE,
+          theme: "dark",
+          layout: { mode: "free", gap: 24 },
+          sessions: { ...DEFAULT_APPEARANCE.sessions, density: "compact", maxVisible: 2, showTool: false },
+        },
+      }),
+    });
+    expect(arranged.status).toBe(200);
+
+    const res = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ appearance: { clock: { scale: 140 } } }),
+    });
+    expect(res.status).toBe(200);
+    const { appearance } = await res.json();
+    // Omitted fields keep the arranged host look instead of resetting to defaults.
+    expect(appearance.clock).toEqual({ x: 50, y: 36, scale: 140, format: "24h" });
+    expect(appearance.theme).toBe("dark");
+    expect(appearance.layout).toEqual({ mode: "free", gap: 24 });
+    expect(appearance.sessions).toEqual({ density: "compact", maxVisible: 2, showProject: true, showTool: false, showElapsed: true });
+    expect(bridge.config.appearance).toEqual(appearance);
+  });
+
+  it("rejects non-object appearance values with 400", async () => {
+    for (const appearance of ["light", null, [1], 5]) {
+      const res = await setupJson("/api/setup/look", { method: "PUT", body: JSON.stringify({ appearance }) });
+      expect(res.status, JSON.stringify(appearance)).toBe(400);
+      expect(await res.json()).toMatchObject({ error: { code: "invalid_appearance" } });
+    }
+    expect(bridge.config.appearance).toEqual(normalizeAppearance(DEFAULT_APPEARANCE));
+  });
+
+  it("saves appearance-only and clear-pet updates without loading the pet catalog", async () => {
+    const appearanceOnly = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ appearance: { clock: { scale: 140 } } }),
+    });
+    expect(appearanceOnly.status).toBe(200);
+    expect((await appearanceOnly.json()).appearance.clock.scale).toBe(140);
+    expect(petdexFetch).not.toHaveBeenCalled();
+
+    const petDir = join(home, "pets", "demo");
+    mkdirSync(petDir, { recursive: true });
+    writeFileSync(join(petDir, "pet.json"), JSON.stringify({ displayName: "Demo" }));
+    writeFileSync(join(petDir, "spritesheet.webp"), "RIFF-demo");
+    const selected = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ activePet: "local:demo" }),
+    });
+    expect(selected.status).toBe(200);
+    expect((await selected.json()).activePet).toBe("local:demo");
+
+    petdexFetch.mockClear();
+    const cleared = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ activePet: null }),
+    });
+    expect(cleared.status).toBe(200);
+    expect((await cleared.json()).activePet).toBeNull();
+    expect(bridge.config.activePet).toBeNull();
+    expect(petdexFetch).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown host pets from setup", async () => {
     const res = await setupJson("/api/setup/look", {
       method: "PUT",
@@ -251,6 +339,48 @@ describe("bridge server setup look API", () => {
       body: JSON.stringify({ appearance: { theme: "light" } }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("requires the setup header, an Origin, and a JSON content type on mutations", async () => {
+    const body = JSON.stringify({ appearance: { theme: "light" } });
+
+    const missingHeader = await fetch(`${base()}/api/setup/look`, {
+      method: "PUT",
+      headers: { origin: base(), "content-type": "application/json" },
+      body,
+    });
+    expect(missingHeader.status).toBe(403);
+
+    const missingOrigin = await fetch(`${base()}/api/setup/look`, {
+      method: "PUT",
+      headers: { "x-pocketpet-setup": "1", "content-type": "application/json" },
+      body,
+    });
+    expect(missingOrigin.status).toBe(403);
+
+    const wrongContentType = await fetch(`${base()}/api/setup/look`, {
+      method: "PUT",
+      headers: { origin: base(), "x-pocketpet-setup": "1", "content-type": "text/plain" },
+      body,
+    });
+    expect(wrongContentType.status).toBe(403);
+
+    expect(bridge.config.appearance.theme).toBe("system");
+  });
+
+  it("never includes the token or host config in setup look responses", async () => {
+    const lookText = await (await fetch(`${base()}/api/setup/look`)).text();
+    expect(lookText).not.toContain(bridge.config.token);
+    expect(Object.keys(JSON.parse(lookText)).sort()).toEqual(["activePet", "appearance", "pets"]);
+    expect(lookText).not.toMatch(/"sleepAfterMinutes"|"quietHours"|"token"|"port"/);
+
+    const putText = await (await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ appearance: { clock: { scale: 140 } } }),
+    })).text();
+    expect(putText).not.toContain(bridge.config.token);
+    expect(Object.keys(JSON.parse(putText)).sort()).toEqual(["activePet", "appearance"]);
+    expect(putText).not.toMatch(/"sleepAfterMinutes"|"quietHours"|"token"|"port"/);
   });
 
   it("refuses setup look reads with a non-loopback Host header", async () => {
