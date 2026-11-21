@@ -12,7 +12,9 @@ import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth.js";
 import { pickLanguage } from "./i18n.js";
-import { localHostname, pairingLinks, setupDeniedHtml, setupHtml } from "./onboarding.js";
+import { localHostname, pairingLinks } from "./onboarding.js";
+import { setupAssets, setupDeniedHtml, setupPageHtml } from "./setupPage.js";
+import { serviceStatus } from "./service.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
 
@@ -238,13 +240,31 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
             qrSvg = "";
           }
         }
-        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port, usbUrl: links.usbUrl, lang, hostname });
+        const host = hostInfo();
+        const probeService = opts.probeService ?? (() => serviceStatus({ home, nodePath: process.execPath, cliPath: "" }));
+        const serviceRunning = process.platform === "darwin" ? await probeService().catch(() => false) : null;
+        const assets = setupAssets(opts.webDist);
+        const html = setupPageHtml({
+          qrSvg,
+          ipUrls: links.ipUrls,
+          localUrl: links.localUrl,
+          port,
+          usbUrl: links.usbUrl,
+          lang,
+          hostname,
+          assets,
+          host,
+          serviceRunning,
+          logPath: join(home, "logs", "bridge.log"),
+          appearance: config.appearance,
+        });
         res.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",
           "x-content-type-options": "nosniff",
           "referrer-policy": "no-referrer",
-          "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+          "content-security-policy":
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
         });
         return res.end(html);
       }
@@ -291,6 +311,13 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         if (subpath.startsWith("/local/")) return serveLocalPetAsset(subpath, res);
         if (subpath.startsWith("/petdex/")) return await servePetdexPetAsset(subpath, res);
         return text(res, 404, "not found");
+      }
+      // Loopback + exact Host only: the setup shell loads its hashed JS/CSS without a
+      // phone token. LAN requests do not match and fall through to the token gate below.
+      if (req.method === "GET" && path.startsWith("/assets/web/") && isSetupRequestAllowed(req, port)) {
+        const file = safeJoin(opts.webDist, path.slice("/assets/web".length));
+        if (!file || !existsSync(file)) return text(res, 404, "not found");
+        return serveFile(res, file);
       }
       if (!isAuthorized(req, url, config.token)) return text(res, 401, "unauthorized");
       if (url.searchParams.get("token") === config.token) setTokenCookie(res, config.token);
