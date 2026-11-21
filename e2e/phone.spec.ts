@@ -27,3 +27,13 @@ test("wide layout shows session cards", async ({ page }) => {
   });
   await expect(page.locator("#sessions .card").filter({ hasText: "wide-demo" })).toContainText("等待中");
 });
+
+test("loads the active pet sprite and switches pets from the drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+  await page.locator("#gear").click();
+  await page.locator('#pet-list input[value="local:testpet2"]').check();
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet2");
+});
