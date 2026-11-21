@@ -1,19 +1,23 @@
 #!/usr/bin/env node
-import { appendFileSync, existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
 import { configPath, ensureConfig, foldPetHome, loadConfig, type Config } from "./config.js";
+import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
-import { installClaudeHooks } from "./adapters/claudeInstall.js";
 import { doctorChecks } from "./doctor.js";
-import { urlsForPort } from "./net.js";
-import { startBridge } from "./server.js";
+import { askYesNo, localHostname, pairingLinks, type QrHost } from "./onboarding.js";
+import { SERVICE_LABEL, installService, serviceStatus, uninstallService, type ServiceConfig } from "./service.js";
+import { startBridge, type Bridge } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
 const MAX_LOG_BYTES = 1_000_000;
+const HEALTH_TIMEOUT_MS = 800;
+const SERVICE_HEALTH_TIMEOUT_MS = 10_000;
 export const MAX_STDIN_BYTES = 256 * 1024;
 export const STDIN_TIMEOUT_MS = 1000;
 
@@ -125,6 +129,163 @@ export async function runHook(agent: string): Promise<void> {
   }
 }
 
+function claudeSettingsPath(): string {
+  return join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** True when every FoldPet hook event is wired in the Claude settings file. */
+function hasFoldPetHooks(settingsPath: string): boolean {
+  if (!existsSync(settingsPath)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(settingsPath, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.hooks)) return false;
+  const hooks = parsed.hooks;
+  return CLAUDE_HOOK_EVENTS.every((event) => {
+    const entries = hooks[event];
+    if (!Array.isArray(entries)) return false;
+    return entries.some(
+      (entry) => isRecord(entry) && Array.isArray(entry.hooks) && entry.hooks.some((hook) => isRecord(hook) && hook.command === HOOK_COMMAND),
+    );
+  });
+}
+
+/**
+ * Installs Claude hooks only with explicit consent. Non-TTY callers are never
+ * prompted, and failures are reported generically because the settings JSON
+ * may contain unrelated secrets.
+ */
+async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Promise<void> {
+  if (options.noHooks) {
+    console.log("Claude Code hooks: skipped (--no-hooks)");
+    return;
+  }
+  const settingsPath = claudeSettingsPath();
+  if (hasFoldPetHooks(settingsPath)) {
+    console.log("Claude Code hooks: already installed");
+    return;
+  }
+  const tty = Boolean(process.stdin.isTTY);
+  let install = false;
+  if (options.yes) install = true;
+  else if (tty) install = await askYesNo("Install Claude Code hooks?", true, tty);
+  else {
+    console.log("Claude Code hooks: skipped (not a TTY; pass --yes or run `fold-pet init`)");
+    return;
+  }
+  if (!install) {
+    console.log("Claude Code hooks: skipped");
+    return;
+  }
+  try {
+    const result = installClaudeHooks(settingsPath);
+    console.log(`Claude Code hooks added: ${result.added.join(", ") || "none"}`);
+  } catch {
+    console.error("Claude Code hooks: could not update settings; continuing without hooks.");
+  }
+}
+
+async function bridgeHealthy(port: number): Promise<boolean> {
+  if (port <= 0) return false;
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await bridgeHealthy(port)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return bridgeHealthy(port);
+}
+
+type UpOptions = { yes: boolean; noHooks: boolean; noService: boolean; noOpen: boolean; qrHost: QrHost };
+
+const UP_USAGE = "usage: fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]";
+const SERVICE_USAGE = "usage: fold-pet service install|uninstall|status";
+
+function parseQrHost(value: string): QrHost | null {
+  return value === "ip" || value === "local" ? value : null;
+}
+
+function parseUpOptions(args: string[]): UpOptions | null {
+  const options: UpOptions = { yes: false, noHooks: false, noService: false, noOpen: false, qrHost: "ip" };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--yes") options.yes = true;
+    else if (arg === "--no-hooks") options.noHooks = true;
+    else if (arg === "--no-service") options.noService = true;
+    else if (arg === "--no-open") options.noOpen = true;
+    else if (arg === "--qr-host") {
+      const value = args[index + 1];
+      const qrHost = value === undefined ? null : parseQrHost(value);
+      if (!qrHost) return null;
+      options.qrHost = qrHost;
+      index += 1;
+    } else if (arg.startsWith("--qr-host=")) {
+      const qrHost = parseQrHost(arg.slice("--qr-host=".length));
+      if (!qrHost) return null;
+      options.qrHost = qrHost;
+    } else return null;
+  }
+  return options;
+}
+
+type PairingOutput = { port: number; token: string; qrHost: QrHost; open: boolean; keepRunning: boolean };
+
+function openSetupPage(port: number): void {
+  try {
+    execFileSync("open", [`http://127.0.0.1:${port}/setup`], { stdio: "ignore" });
+  } catch {
+    // Opening the browser is best effort.
+  }
+}
+
+/** Pairing URLs, a full-size terminal QR, the fallback, and the three phone steps. */
+function printPairing(options: PairingOutput): void {
+  const links = pairingLinks(options.port, options.token, { hostname: localHostname(), qrHost: options.qrHost });
+  if (links.ipUrls.length === 0) console.log("No LAN IPv4 address found.");
+  for (const url of links.ipUrls) console.log(url);
+  if (links.localUrl) console.log(links.localUrl);
+  if (links.qrUrl) {
+    qrcode.generate(links.qrUrl, { small: false });
+  } else {
+    console.log("USB fallback (no LAN URL):");
+    console.log(`  adb reverse tcp:${options.port} tcp:${options.port}`);
+    console.log(`  then open http://127.0.0.1:${options.port}/?token=${encodeURIComponent(options.token)} on your phone`);
+  }
+  console.log("三步完成配對：");
+  console.log("  1. 同一個 Wi-Fi：確認 Mac 同手機連住同一個 Wi-Fi 網絡。");
+  console.log("  2. 用相機掃描：打開手機相機，對準上面嘅 QR code。");
+  console.log("  3. 加到主畫面：喺瀏覽器選單揀「加到主畫面」，之後一開即用。");
+  console.log(options.keepRunning ? "Bridge keeps running in the background." : "Scan the QR code on your phone. Ctrl+C to stop.");
+  if (options.open) openSetupPage(options.port);
+}
+
+function webDistPath(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "web");
+}
+
+function waitForInterrupt(bridge: Bridge): Promise<void> {
+  return new Promise<void>((resolveStop) => {
+    process.once("SIGINT", () => {
+      bridge.close().then(() => resolveStop(), () => resolveStop());
+    });
+  });
+}
+
 async function runInit(): Promise<number> {
   const home = foldPetHome();
   try {
@@ -135,8 +296,7 @@ async function runInit(): Promise<number> {
     console.error("Fix or delete the file, then run `fold-pet init` again.");
     return 1;
   }
-  const settingsPath = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
-  const result = installClaudeHooks(settingsPath);
+  const result = installClaudeHooks(claudeSettingsPath());
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
@@ -144,27 +304,130 @@ async function runInit(): Promise<number> {
   return 0;
 }
 
-async function runServer(): Promise<number> {
+async function runUp(args: string[]): Promise<number> {
+  const options = parseUpOptions(args);
+  if (!options) {
+    console.error(UP_USAGE);
+    return 2;
+  }
+  const home = foldPetHome();
+  let config: Config;
+  try {
+    config = ensureConfig(home);
+  } catch {
+    // Never print the error: it may quote the malformed config, including the token.
+    console.error(`config unreadable: ${configPath(home)}`);
+    console.error("Fix or delete the file, then run `fold-pet init` again.");
+    return 1;
+  }
+  console.log(`Config: ${configPath(home)}`);
+
+  await setupClaudeHooks({ yes: options.yes, noHooks: options.noHooks });
+  const tty = Boolean(process.stdin.isTTY);
+
+  if (await bridgeHealthy(config.port)) {
+    console.log(`Bridge already running on port ${config.port}.`);
+    printPairing({ port: config.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: true });
+    return 0;
+  }
+
+  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url) };
+  let installed = false;
+  if (!options.noService) {
+    try {
+      installed = await serviceStatus(serviceConfig);
+    } catch {
+      installed = false;
+    }
+  }
+
+  let serviceMode = installed;
+  if (!installed && !options.noService) {
+    if (options.yes) serviceMode = true;
+    else if (tty) serviceMode = await askYesNo("Start bridge at login?", false, tty);
+  }
+
+  if (serviceMode) {
+    if (!installed) {
+      try {
+        await installService(serviceConfig);
+      } catch {
+        console.error("Could not install the bridge service. Build the CLI and run `fold-pet service install` for details.");
+        return 1;
+      }
+    }
+    if (!(await waitForHealth(config.port, SERVICE_HEALTH_TIMEOUT_MS))) {
+      console.error(`Bridge is not responding on port ${config.port}.`);
+      console.error("Run `fold-pet service install` to reload it, or `fold-pet run` in the foreground to see the error.");
+      return 1;
+    }
+    console.log(`Bridge service is running (${SERVICE_LABEL}).`);
+    printPairing({ port: config.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: true });
+    return 0;
+  }
+
+  const bridge = await startBridge({ home, config, webDist: webDistPath() });
+  printPairing({ port: bridge.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: false });
+  await waitForInterrupt(bridge);
+  return 0;
+}
+
+async function runService(action: string | undefined): Promise<number> {
+  if (action !== "install" && action !== "uninstall" && action !== "status") {
+    console.error(SERVICE_USAGE);
+    return 2;
+  }
+  const home = foldPetHome();
+  try {
+    ensureConfig(home);
+  } catch {
+    console.error(`config unreadable: ${configPath(home)}`);
+    return 1;
+  }
+  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url) };
+  if (action === "install") {
+    await installService(serviceConfig);
+    console.log(`Installed ${SERVICE_LABEL}. The bridge starts at login and keeps running.`);
+    return 0;
+  }
+  if (action === "uninstall") {
+    await uninstallService(serviceConfig);
+    console.log(`Removed ${SERVICE_LABEL}.`);
+    return 0;
+  }
+  const running = await serviceStatus(serviceConfig);
+  console.log(running ? `Bridge service is running (${SERVICE_LABEL}).` : `Bridge service is not running (${SERVICE_LABEL}).`);
+  return running ? 0 : 1;
+}
+
+async function runServer(args: string[] = []): Promise<number> {
+  const serviceMode = args.includes("--service");
   const home = foldPetHome();
   let config: Config;
   try {
     config = loadConfig(home);
   } catch {
-    console.error("No config found. Run `fold-pet init` first.");
-    return 1;
+    try {
+      config = ensureConfig(home);
+    } catch {
+      // Never print the error: it may quote the malformed config, including the token.
+      console.error(`config unreadable: ${configPath(home)}`);
+      console.error("Fix or delete the file, then run `fold-pet init` again.");
+      return 1;
+    }
+    if (!serviceMode) {
+      console.log(`Created config: ${configPath(home)}`);
+      console.log("Claude Code hooks are not installed yet; run `fold-pet init` to add them.");
+    }
   }
-  const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "web");
-  const bridge = await startBridge({ home, config, webDist });
-  const urls = urlsForPort(bridge.port, config.token);
-  if (urls.length === 0) console.log("No LAN IPv4 address found. Join WiFi or use USB (adb reverse).");
-  for (const url of urls) console.log(url);
-  if (urls[0]) qrcode.generate(urls[0], { small: true });
-  console.log("Scan the QR on your phone. Ctrl+C to stop.");
-  await new Promise<void>((resolveStop) => {
-    process.once("SIGINT", () => {
-      bridge.close().then(() => resolveStop(), () => resolveStop());
-    });
-  });
+  const bridge = await startBridge({ home, config, webDist: webDistPath() });
+  if (serviceMode) {
+    // The launchd job redirects stdout to a log; never write URLs or the token there.
+    console.log(`FoldPet bridge listening on port ${bridge.port}`);
+  } else {
+    printPairing({ port: bridge.port, token: config.token, qrHost: "ip", open: false, keepRunning: false });
+  }
+  await waitForInterrupt(bridge);
   return 0;
 }
 
@@ -175,10 +438,13 @@ async function runDoctor(): Promise<number> {
 }
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
-  const [command, arg] = argv;
+  const [command, ...args] = argv;
+  const arg = args[0];
   try {
     if (command === "init") return await runInit();
-    if (command === "run" || command === undefined) return await runServer();
+    if (command === "up") return await runUp(args);
+    if (command === "run" || command === undefined) return await runServer(args);
+    if (command === "service") return await runService(arg);
     if (command === "doctor") return await runDoctor();
     if (command === "hook") {
       await runHook(arg ?? "");
@@ -190,7 +456,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.error(`fold-pet: ${command ?? "run"} failed`);
     return 1;
   }
-  console.error("usage: fold-pet init | run | doctor | hook claude");
+  console.error("usage: fold-pet init | up | run | service <install|uninstall|status> | doctor | hook claude");
   return 2;
 }
 
