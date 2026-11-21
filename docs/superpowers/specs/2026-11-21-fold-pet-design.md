@@ -105,7 +105,7 @@ Adapter → bridge（只接受 loopback 來源）：
 | `/api/event` | POST | adapters | 接收正規化事件 | 只限 loopback |
 | `/api/state` | GET | phone | 初始 snapshot（sessions ＋目前寵物狀態） | Bearer token |
 | `/ws` | WS | phone | 狀態推送＋心跳 | token（query，連上後轉 header） |
-| `/` | GET | phone | 顯示頁 | token（一次性 bootstrap query，存 localStorage） |
+| `/` | GET | phone | 顯示頁 | token（一次性 bootstrap query，換 HttpOnly cookie，載入後由地址欄移除） |
 | `/api/pets` | GET | phone | 可用寵物清單（本機＋快取 manifest） | Bearer token |
 | `/api/pets` | POST | phone | 上傳寵物（zip／folder） | Bearer token |
 | `/api/active-pet` | PUT | phone | 切換目前寵物 | Bearer token |
@@ -136,14 +136,64 @@ Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上
 
 ## 安裝與連網
 
-1. `npx fold-pet init`：偵測已安裝 agent、寫入 adapters、建立 `~/.fold-pet/config.json`、選擇預設寵物。
-2. `npx fold-pet`：啟動 bridge，terminal 印出 QR（區網 URL＋一次性 token），列出偵測到的網絡位址。
-3. 手機掃 QR → 開頁 → 加到主螢幕；之後開頁自動重連。
+1. `npm install && npm run build && npm link` 之後執行 `fold-pet up`（詳見下一節）：建立 config、按明確同意安裝 hooks、可選登入服務。
+2. `fold-pet up` 印出完整 QR 與所有區網 URL，並在 Mac 開啟 loopback 配對頁 `/setup`。
+3. 手機相機掃 QR → 開頁 → 加到主畫面；之後開頁自動重連。
 
 - 主路徑：Mac 與手機同一 WiFi。
 - 次路徑（不同網絡）：USB 接線 + `adb reverse tcp:7788 tcp:7788`，手機開 `http://127.0.0.1:7788/?token=...`；bridge 不需改 IP。macOS Monterey+ 已移除 Bluetooth PAN（本機 `networksetup` 證實），所以不提供藍牙 tethering。
 - 長亮：Wake Lock 需要 secure context；純 HTTP LAN IP 不適用，抽屜顯示系統設定指引。USB `adb reverse` 使用 `127.0.0.1`，屬 secure context，可直接使用。本機 HTTPS（手機一次性安裝憑證）列為後續選項。
 - 全程免費、無帳號、無雲端。
+
+## 首次安裝與配對（Onboarding）
+
+2026-11-21 增補。目標：第一次安裝只需一條指令，手機零設定，相機掃一次 QR 即可用。
+
+### `fold-pet up`
+
+```bash
+npm install && npm run build && npm link
+fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
+```
+
+1. `ensureConfig`：沒有 `~/.fold-pet/config.json` 就建立（目錄 0700、檔案 0600），只印路徑，不印 token。
+2. Claude Code hooks：只有明確同意才寫入 `~/.claude/settings.json`（或 `CLAUDE_CONFIG_DIR`）。TTY 互動問 `Install Claude Code hooks? [Y/n]`；`--yes` 直接安裝；`--no-hooks` 跳過；非 TTY 不問、跳過並提示稍後執行 `fold-pet init`。既有設定與第三方 hooks 保留，寫入用原子替換。
+3. 登入服務：TTY 問 `Start bridge at login? [y/N]`（預設否）；`--yes` 直接安裝；`--no-service` 跳過。若該 port 的 `/health` 已有回應，視為 bridge 已在運行，只重新印配對資料。
+4. 服務模式：等 `/health` 成功（最多 10 秒）後印配對資料並結束；前景模式：啟動 bridge、印配對資料、開 `/setup`、等 Ctrl+C。
+5. 配對輸出：完整尺寸終端 QR（`qrcode-terminal`，`small: false`）、所有區網 IP URL、可用的 `.local` URL、三步指示；沒有 LAN URL 時改印 USB `adb reverse` 指示。`--no-open` 不開瀏覽器。
+
+### 配對頁 `/setup`
+
+- 只接受 loopback 來源（非 loopback 回 403），`Cache-Control: no-store`，並使用實際監聽 port（支援測試的 `port: 0`）。
+- 以伺服器端 `qrcode` 產生 SVG QR，內容為帶 token 的配對 URL；同時列出 IP URL、`.local` URL（如有）與 USB 指示。
+- token 只出現在頁面顯示的 QR／URL 文字，不出現在瀏覽器地址（地址是 `http://127.0.0.1:<port>/setup`）。
+- 無 LAN URL 時不畫 QR，改印指示，避免產生無效 QR。
+
+### 手機流程與 token
+
+- 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: foldpet_token=...; HttpOnly; SameSite=Lax; Path=/` 設 cookie。
+- 頁面載入後以 `history.replaceState` 移除 `?token=`，地址欄與其後書籤只剩 `/`；API、WebSocket 與重新載入都靠 HttpOnly cookie，token 不再出現在畫面或瀏覽歷史。
+- 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.foldpet.installHintDismissed`）。
+
+### launchd 登入服務
+
+- `fold-pet service install|uninstall|status` 管理 LaunchAgent `dev.foldpet.bridge`（`~/Library/LaunchAgents/dev.foldpet.bridge.plist`）。
+- 服務執行 `<node> <dist/cli.js> run --service`，`RunAtLoad` 與 `KeepAlive` 為 true；`FOLDPET_HOME` 經 `EnvironmentVariables` 傳入。
+- 拒絕由 `.ts` 或不存在的 CLI 安裝，必須使用 build 後的 `dist/cli.js`；plist 以 tmp＋rename 原子寫入。
+- `run --service` 只印 `FoldPet bridge listening on port N`：log（`~/.fold-pet/logs/bridge.log`，檔案 0600、目錄 0700）永遠不含 token、URL 或 QR。
+- `service status` 以 `launchctl print gui/<uid>/dev.foldpet.bridge` 的 exit code 判定：running 回 0，否則 1。
+
+### 網址選擇與 `.local` 閘
+
+- QR 預設用第一個區網 IPv4；`.local`（Bonjour，`scutil --get LocalHostName`）只作穩定備選並列顯示。`--qr-host local` 可把終端 QR 改用 `.local`；`/setup` 仍用 IP。
+- `.local` 依賴 mDNS：部分 WiFi 封鎖多播，Android 各版本解析行為不一。在 Android 與 iPhone 都實測通過前，**`.local` 不是通用預設**，IP 仍是預設，`--qr-host local` 屬 opt-in。實測結果記入 `docs/acceptance/m1-manual.md`。
+
+### 依賴與 port 語義
+
+- 新增 `qrcode`（MIT）＋ dev `@types/qrcode`，用於 `/setup` 的伺服器端 SVG QR；終端 QR 沿用 `qrcode-terminal`。無其他新依賴、無雲端、無遙測。
+- `FOLDPET_PORT` 只在**建立新 config** 時生效：整數 0–65535（0 由系統選 free port），無效值回落 7788；既有 config 不會被改寫，port 以 `config.json` 為準。
+
+**決策（2026-11-21）**：onboarding 的 QR 預設保持 IP；`.local` 只並列顯示並可經 `--qr-host local` 選用。等 Android 與 iPhone 都實測通過後，才重新評估是否把 `.local` 變成通用預設。
 
 ## 保安與私隱
 

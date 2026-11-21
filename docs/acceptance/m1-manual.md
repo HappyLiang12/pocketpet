@@ -6,18 +6,19 @@ Rules:
 
 - The tester records the result in this file (or in the task/issue that links to it). **Do not infer a pass from unit tests, Playwright tests, or code inspection.** Automated tests are necessary but do not replace these manual checks.
 - `PASS` requires the evidence described for that item. `FAIL` requires the observed result. `BLOCKED` requires the blocker. Anything else stays `NOT RUN`.
-- Keep screenshots free of the bridge token. The QR/URL contains `?token=...`; crop the address bar before attaching a screenshot.
+- Keep screenshots free of the bridge token. The QR/URL contains `?token=...`; crop the address bar or the `/setup` page before attaching a screenshot.
 - M1 acceptance does not require Qoder. Qoder is the M3 adapter gated by `docs/research/qoder-events.md`.
 
 ## Preconditions
 
-1. `npm install && npm run build` succeeds.
-2. `npm link` has been run, and `fold-pet` resolves in the shell that starts Claude Code.
-3. Claude Code is installed and its settings file is writable (`~/.claude/settings.json` by default).
-4. A pet is available: either `npx petdex install boba` has succeeded, or a local pet exists in `~/.fold-pet/pets`.
-5. The phone and Mac are on the same WiFi for items 3–6 and 8–9; item 7 uses USB + `adb reverse` (macOS Monterey+ has no Bluetooth PAN); items 1, 2, and 10 are local to the Mac.
-6. The phone is a vivo X Fold 5 with Chrome for items 3–5 and 7–8; an iPhone with Safari is also available for item 6.
-7. Record the device OS/browser versions, Claude Code version, and the commit under test in the sign-off block.
+1. `npm install && npm run build` succeeds. `npm link` has been run, so `fold-pet` resolves to the built `dist/cli.js` in the shell used for items 1, 2, 11, and 12 (`fold-pet service install` refuses a `.ts` entry point).
+2. Claude Code is installed and its settings file is writable (`~/.claude/settings.json` by default).
+3. A pet is available: either `npx petdex install boba` has succeeded, or a local pet exists in `~/.fold-pet/pets`.
+4. The phone and Mac are on the same WiFi for items 3–6, 8–9, 11, and 13; item 7 uses USB + `adb reverse` (macOS Monterey+ has no Bluetooth PAN); items 1, 2, 10, and 12 are local to the Mac.
+5. The phone is a vivo X Fold 5 with Chrome for items 3–5, 7–8, and 11 (Android); an iPhone with Safari is also available for items 6 and 11 (iOS).
+6. For item 11 (and its optional `.local` sub-check, item 13) the phone **camera** scans the QR; `adb reverse` must not be used as a substitute. The `.local` sub-check is recorded but does not gate M1.
+7. Item 11 exercises the first-run prompts. If you reuse an existing `~/.fold-pet`, record which steps reported "already installed" instead of skipping the item.
+8. Record the device OS/browser versions, Claude Code version, and the commit under test in the sign-off block.
 
 ## Summary
 
@@ -33,6 +34,9 @@ Rules:
 | 8 | Kill bridge: `已斷線`; restart: reconnect without reload | Tester: screen recording or paired screenshots + terminal output | NOT RUN |
 | 9 | Pet switching: `npx petdex install boba`, drawer switch, sprite changes | Tester: install output + before/after screenshots | NOT RUN |
 | 10 | No-secret check: `git grep -nE 'token\|secret'` has only placeholders/fixtures | Tester/reviewer: pasted grep output and review | NOT RUN |
+| 11 | `fold-pet up` creates config, prompts for hooks, prints a full-size QR and opens `/setup`; the phone **camera** opens the page, the token disappears from the address bar, and the add-to-home hint appears | Tester: redacted `fold-pet up` stdout, Mac `/setup` screenshot, Android and iOS phone screenshots + recorded results | NOT RUN |
+| 12 | `fold-pet service install` registers `dev.foldpet.bridge`, auto-starts the bridge after login/reboot, and `service uninstall` removes it | Tester: `launchctl print gui/<uid>/dev.foldpet.bridge` output, log excerpt, login/reboot observation, uninstall output | NOT RUN |
+| 13 | Optional `.local` sub-check: the printed `<LocalHostName>.local` URL opens on both phones (recorded, does not gate M1) | Tester: Android and iOS screenshots plus pass/fail per device | NOT RUN |
 
 ## Item details
 
@@ -298,6 +302,99 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 (paste `git status --short` output)
 ```
 
+### 11. `fold-pet up` with a real camera scan
+
+**Steps**
+
+1. With the built, linked CLI, run `fold-pet up` in a terminal and observe the first-run output. If you want to test the first-run prompts, use a fresh `FOLDPET_HOME` (for example `FOLDPET_HOME=/tmp/foldpet-accept fold-pet up`) and record that path instead of `~/.fold-pet`.
+2. Answer the `Install Claude Code hooks? [Y/n]` prompt (or record the `--yes` / `--no-hooks` / non-TTY skip message). Record the `Start bridge at login? [y/N]` choice; if you answer no, leave the foreground bridge running until the scan is finished.
+3. Confirm the output shows `Config: <path>`, a full-size terminal QR, all LAN URLs, the `.local` URL (if any), and the three Traditional Chinese steps. Confirm `http://127.0.0.1:<port>/setup` opened in the Mac browser (or was skipped with `--no-open`).
+4. On the vivo X Fold 5, open the **camera** app and scan the QR code. Open the detected link. Do not use `adb reverse` or a copied URL for this step.
+5. After the page loads, inspect the address bar. Open the gear drawer and record the exact add-to-home hint, then dismiss it and reload.
+6. Repeat steps 4–5 with the iPhone camera and Safari.
+7. Redact every `?token=...` value before pasting the `fold-pet up` output. Crop the QR and URLs out of any Mac `/setup` screenshot.
+
+**PASS criteria**
+
+- The first run creates (or reports) the config, prints the path without the token, handles Claude hooks per consent (prompt, `--yes` install, `--no-hooks`, non-TTY skip, or "already installed"), prints a full-size QR, and opens the loopback `/setup` page.
+- Both phones load the page through a camera scan: the clock, pet, and `已連線` appear with no phone-side configuration.
+- After load the address bar shows the path only (`/...`), with no `?token=`; a reload still shows `已連線` and the pet loads (the HttpOnly cookie survives).
+- The drawer shows the one-time add-to-home hint exactly once (platform-appropriate text), and after dismissing it a reload keeps it hidden.
+- Android and iOS results are recorded separately as PASS/FAIL with the observed behavior. A failure is a finding, not a reason to relax this checklist.
+- No step used `adb reverse`; no token appears in any pasted output or screenshot.
+
+**Producer of evidence:** tester, `fold-pet up` stdout with tokens redacted, a Mac `/setup` screenshot with the QR/URLs cropped, and phone screenshots of the loaded page, address bar, and drawer hint for both Android and iOS.
+
+**Result:** NOT RUN
+
+**Evidence:**
+
+```text
+(paste redacted `fold-pet up` stdout; list the prompt answers and whether /setup opened)
+
+(Android: page screenshot, address bar after load, drawer hint text; result)
+(iOS: page screenshot, address bar after load, drawer hint text; result)
+```
+
+### 12. launchd login service lifecycle
+
+**Steps**
+
+1. Run `fold-pet service install` and paste the stdout. This creates a real login item; only run it with consent.
+2. Run `launchctl print gui/$(id -u)/dev.foldpet.bridge` and paste the key lines (state, program arguments, RunAtLoad/KeepAlive). Confirm `~/Library/LaunchAgents/dev.foldpet.bridge.plist` exists.
+3. Run `fold-pet service status` and record the line plus the exit code with `echo $?`.
+4. Inspect `~/.fold-pet/logs/bridge.log` and paste its contents.
+5. Log out and back in (or reboot) without starting the bridge manually. Confirm the service is running: `fold-pet service status` exits 0 and the phone page reconnects with `已連線` (the existing pairing keeps working).
+6. Run `fold-pet service uninstall`, confirm the plist is gone, `launchctl print gui/$(id -u)/dev.foldpet.bridge` fails, and no bridge remains on the port. `fold-pet service status` should now exit 1.
+7. Do not paste the config file or any tokenized URL. The log is expected to be token-free; if it is not, record that as FAIL immediately.
+
+**PASS criteria**
+
+- `service install` loads LaunchAgent `dev.foldpet.bridge`; `launchctl print` shows the label, `ProgramArguments` ending in `run --service`, and `RunAtLoad`/`KeepAlive` true.
+- `service status` reports running with exit code 0 after install; the log contains only the `FoldPet bridge listening on port <N>` line, with no token, URL, or QR.
+- After logout/login or reboot, the bridge starts on its own and the phone reconnects without re-pairing.
+- `service uninstall` boots the job out, removes the plist, and `service status` then reports not running with exit code 1.
+- If the login/reboot step cannot be performed, record `BLOCKED` with the reason; do not infer auto-start from `launchctl bootstrap` alone.
+
+**Producer of evidence:** tester, pasted `service install`/`status`/`uninstall` output, `launchctl print` excerpt, log excerpt with no secrets, and a note of the login/reboot observation.
+
+**Result:** NOT RUN
+
+**Evidence:**
+
+```text
+(paste `fold-pet service install` stdout)
+
+(paste `launchctl print gui/$(id -u)/dev.foldpet.bridge` key lines)
+
+(paste log contents; `echo $?` for service status before/after uninstall)
+
+(login/reboot auto-start observation; uninstall result)
+```
+
+### 13. `.local` Bonjour URL sub-check (optional, does not gate M1)
+
+**Steps**
+
+1. From the item 11 `fold-pet up` output, copy the printed `<LocalHostName>.local` URL and open it in vivo Chrome (same WiFi) and in iPhone Safari.
+2. Record the result per device. If the name does not resolve, record the failure and the network/browser; do not change the default QR host or edit code to make it pass.
+3. Optionally repeat the terminal QR selection with `fold-pet up --qr-host local --no-service --no-hooks --no-open` while a bridge is already running (this only reprints pairing) and record whether the QR contains the `.local` URL.
+
+**PASS criteria**
+
+- A pass/fail result is recorded for both Android and iOS. This is a sub-check: a FAIL is a documented finding, not an M1 blocker. The IP QR remains the default and `--qr-host local` remains opt-in until both platforms are verified.
+
+**Producer of evidence:** tester, phone screenshots or exact error text per device.
+
+**Result:** NOT RUN
+
+**Evidence:**
+
+```text
+(Android: .local result and screenshot/error)
+(iOS: .local result and screenshot/error)
+```
+
 ## Sign-off
 
 | Field | Value |
@@ -310,5 +407,9 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 | iPhone / iOS / Safari version | |
 | Claude Code version | |
 | Network (WiFi SSID / USB adb reverse) | |
+| Android camera-scan result (item 11) | |
+| iOS camera-scan result (item 11) | |
+| Login service install/reboot (item 12) | |
+| `.local` result (item 13, optional) | |
 | Overall result | NOT RUN |
 | Notes / follow-ups | |
