@@ -10,6 +10,7 @@ interface Snapshot { now: number; pet: string; sessions: Session[]; activePet: s
 
 const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", qoder: "Qoder" };
 const PHASE_LABEL: Record<string, string> = { started: "開始", working: "工作中", waiting: "等待中", review: "待審", done: "完成", failed: "失敗", idle: "閒置" };
+const INSTALL_HINT_KEY = "foldpet.installHintDismissed";
 
 const byId = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const timeEl = byId("time");
@@ -139,7 +140,36 @@ function applySnapshot(snapshot: Snapshot): void {
   }
 }
 
+function stripTokenFromAddressBar(): void {
+  if (!new URL(location.href).searchParams.has("token")) return;
+  // The bootstrap request already set the HttpOnly cookie; the query string is
+  // no longer needed and would leak the pairing token into history/screenshots.
+  history.replaceState(null, "", location.pathname);
+}
+
+function installHintText(): string {
+  const ua = navigator.userAgent;
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios) return "分享 → 加入主畫面";
+  if (/Android/.test(ua)) return "選單 → 加到主畫面";
+  return "可加入主畫面，長開螢幕";
+}
+
+function setupInstallHint(): void {
+  const hint = byId("install-hint");
+  const standalone = window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  if (standalone || localStorage.getItem(INSTALL_HINT_KEY) === "1") return;
+  byId("install-hint-text").textContent = installHintText();
+  hint.hidden = false;
+  byId<HTMLButtonElement>("install-hint-dismiss").addEventListener("click", () => {
+    localStorage.setItem(INSTALL_HINT_KEY, "1");
+    hint.hidden = true;
+  });
+}
+
 function boot(): void {
+  stripTokenFromAddressBar();
   applyLayout();
   window.addEventListener("resize", applyLayout);
   renderClock();
@@ -158,6 +188,7 @@ function boot(): void {
   });
   petSearch.addEventListener("input", renderPetList);
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.hidden = true; });
+  setupInstallHint();
 
   fetch("/api/state").then((res) => (res.ok ? res.json() : null)).then((snapshot) => { if (snapshot) applySnapshot(snapshot as Snapshot); }).catch(() => undefined);
 

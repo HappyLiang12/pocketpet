@@ -80,6 +80,47 @@ test("falls back to the blob when a pet spritesheet cannot decode", async ({ pag
   await expect.poll(() => page.locator("#stage canvas").evaluate((canvas: HTMLCanvasElement) => canvas.getContext("2d")!.getImageData(60, 80, 1, 1).data[3])).toBeGreaterThan(0);
 });
 
+test("strips the pairing token after the cookie is set and survives a reload", async ({ page }) => {
+  // Earlier tests may leave the active pet on a broken fixture; pin a known-good
+  // pet so "the pet still loads" is meaningful.
+  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "local:testpet" }),
+  }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page).toHaveURL(`${ORIGIN}/`);
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+
+  // The HttpOnly cookie is now the only credential: a fresh document without
+  // the query string must still load the app and its data.
+  await page.reload();
+  await expect(page).toHaveURL(`${ORIGIN}/`);
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", /^local:/);
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+});
+
+test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await page.locator("#gear").click();
+  const hint = page.locator("#install-hint");
+  // Desktop Chromium is neither iOS Safari nor Android Chrome.
+  await expect(hint).toBeVisible();
+  await expect(page.locator("#install-hint-text")).toHaveText("可加入主畫面，長開螢幕");
+  await page.locator("#install-hint-dismiss").click();
+  await expect(hint).toBeHidden();
+  expect(await page.evaluate(() => localStorage.getItem("foldpet.installHintDismissed"))).toBe("1");
+
+  // localStorage lives in the same context, so the dismissal survives a reload.
+  await page.reload();
+  await page.locator("#gear").click();
+  await expect(page.locator("#install-hint")).toBeHidden();
+});
+
 test("draws scaled atlases with their real cell geometry", async ({ page }) => {
   // Clear every session so the pet settles on idle row 0; flashes expire within ~3 s.
   const state = await (await expectOk(await fetch(`${ORIGIN}/api/state?token=${TOKEN}`))).json() as {
