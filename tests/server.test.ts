@@ -207,4 +207,34 @@ describe("bridge server security", () => {
       await second.close();
     }
   });
+
+  it("keeps listing local pets when the manifest has a malformed asset URL", async () => {
+    const petDir = join(home, "pets", "demo");
+    mkdirSync(petDir, { recursive: true });
+    writeFileSync(join(petDir, "pet.json"), JSON.stringify({ displayName: "Demo" }));
+    writeFileSync(join(petDir, "spritesheet.webp"), "RIFF-demo");
+
+    const manifest = {
+      pets: [{ slug: "broken", displayName: "Broken", spritesheetUrl: "/relative/sheet.webp", petJsonUrl: "https://petdex.dev/pets/broken/pet.json" }],
+    };
+    const fakeFetch = (async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === "https://petdex.dev/api/manifest") return new Response(JSON.stringify(manifest), { status: 200 });
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as typeof fetch;
+    const config = ensureConfig(home);
+    const second = await startBridge({
+      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [join(home, "pets")],
+      fetchImpl: fakeFetch,
+    });
+    try {
+      const res = await fetch(`http://127.0.0.1:${second.port}/api/pets`, { headers: { cookie } });
+      expect(res.status).toBe(200);
+      const listed = await res.json();
+      expect(listed.pets).toContainEqual(expect.objectContaining({ id: "local:demo", name: "Demo" }));
+      expect(listed.pets.some((pet: { id: string }) => pet.id === "petdex:broken")).toBe(false);
+    } finally {
+      await second.close();
+    }
+  });
 });

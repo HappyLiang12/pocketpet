@@ -20,6 +20,16 @@ type Options = {
 
 type Cache = { fetchedAt: number; pets: PetdexPet[] };
 
+function trustedAssetUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  return url.protocol === "https:" && (url.hostname === "petdex.dev" || url.hostname.endsWith(".petdex.dev"));
+}
+
 function toPet(value: Record<string, unknown>): PetdexPet | null {
   const slug = typeof value.slug === "string" ? value.slug : null;
   const name = typeof value.displayName === "string" ? value.displayName : slug;
@@ -27,6 +37,9 @@ function toPet(value: Record<string, unknown>): PetdexPet | null {
   const petJsonUrl = typeof value.petJsonUrl === "string" ? value.petJsonUrl : null;
   if (!slug || !name || !spritesheetUrl || !petJsonUrl) return null;
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(slug)) return null;
+  // One bad asset URL must not poison the catalog: proxy targets are restricted
+  // to https petdex.dev hosts, so drop the whole entry when either URL fails.
+  if (!trustedAssetUrl(spritesheetUrl) || !trustedAssetUrl(petJsonUrl)) return null;
   return { id: `petdex:${slug}`, source: "petdex", slug, name, spritesheetUrl, petJsonUrl };
 }
 

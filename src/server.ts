@@ -78,6 +78,13 @@ function petdexUrlAllowed(raw: string): boolean {
     return false;
   }
 }
+function petdexSpriteName(raw: string): string | null {
+  try {
+    return basename(new URL(raw).pathname) || null;
+  } catch {
+    return null;
+  }
+}
 function serveFile(res: ServerResponse, file: string): void {
   const data = readFileSync(file);
   res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
@@ -100,7 +107,11 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
     const { local, petdex } = await listPets();
     return [
       ...local.map((pet) => ({ id: pet.id, source: pet.source, slug: pet.slug, name: pet.name, spriteUrl: `/assets/pets/local/${encodeURIComponent(pet.slug)}/${pet.spriteFile}` })),
-      ...petdex.map((pet) => ({ id: pet.id, source: pet.source, slug: pet.slug, name: pet.name, spriteUrl: `/assets/pets/petdex/${encodeURIComponent(pet.slug)}/${basename(new URL(pet.spritesheetUrl).pathname)}` })),
+      ...petdex.flatMap((pet) => {
+        const spriteName = petdexSpriteName(pet.spritesheetUrl);
+        if (!spriteName) return [];
+        return [{ id: pet.id, source: pet.source, slug: pet.slug, name: pet.name, spriteUrl: `/assets/pets/petdex/${encodeURIComponent(pet.slug)}/${spriteName}` }];
+      }),
     ];
   }
   const snapshot = (): Snapshot => aggregator.snapshot(config.activePet, { sleepAfterMinutes: config.sleepAfterMinutes, quietHours: config.quietHours });
@@ -170,7 +181,8 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         if (parts.length !== 2 || !SLUG.test(parts[0]!) || !parts[1]) return text(res, 404, "not found");
         const pet = (await listPets()).petdex.find((candidate) => candidate.slug === parts[0]);
         if (!pet) return text(res, 404, "not found");
-        const spriteName = basename(new URL(pet.spritesheetUrl).pathname);
+        const spriteName = petdexSpriteName(pet.spritesheetUrl);
+        if (!spriteName) return text(res, 404, "not found");
         const source = parts[1] === "pet.json" ? pet.petJsonUrl : parts[1] === spriteName ? pet.spritesheetUrl : null;
         if (!source || !petdexUrlAllowed(source)) return text(res, 404, "not found");
         const cacheDir = join(home, "cache", "petdex", pet.slug);
