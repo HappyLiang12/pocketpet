@@ -9,6 +9,7 @@ import { saveConfig } from "./config.js";
 import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth.js";
+import { pickLanguage } from "./i18n.js";
 import { localHostname, pairingLinks, setupDeniedHtml, setupHtml } from "./onboarding.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
@@ -146,6 +147,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         return json(res, 200, { ok: true, sessions: aggregator.snapshot(null, { sleepAfterMinutes: 0, quietHours: null }).sessions.length });
       }
       if (req.method === "GET" && path === "/setup") {
+        const lang = pickLanguage(req.headers["accept-language"], url.searchParams.get("lang"));
         // Loopback sockets alone are not enough: a DNS-rebinding page also connects from
         // 127.0.0.1, so the Host header must name this exact loopback listener.
         if (!isLoopback(req.socket.remoteAddress) || !isLoopbackHost(req.headers.host, port)) {
@@ -156,9 +158,10 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
             "referrer-policy": "no-referrer",
             "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
           });
-          return res.end(setupDeniedHtml(port));
+          return res.end(setupDeniedHtml(port, lang));
         }
-        const links = pairingLinks(port, config.token, { hostname: localHostname() });
+        const hostname = localHostname();
+        const links = pairingLinks(port, config.token, { hostname });
         let qrSvg = "";
         if (links.qrUrl) {
           try {
@@ -167,7 +170,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
             qrSvg = "";
           }
         }
-        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port, usbUrl: links.usbUrl });
+        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port, usbUrl: links.usbUrl, lang, hostname });
         res.writeHead(200, {
           "content-type": "text/html; charset=utf-8",
           "cache-control": "no-store",

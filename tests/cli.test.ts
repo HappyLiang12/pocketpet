@@ -13,14 +13,17 @@ let home = "";
 let claudeDir = "";
 let savedHome: string | undefined;
 let savedClaudeConfigDir: string | undefined;
+let savedLang: string | undefined;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "pocketpet-cli-"));
   claudeDir = mkdtempSync(join(tmpdir(), "pocketpet-claude-"));
   savedHome = process.env.POCKETPET_HOME;
   savedClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  savedLang = process.env.POCKETPET_LANG;
   process.env.POCKETPET_HOME = home;
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
+  process.env.POCKETPET_LANG = "en";
 });
 
 afterEach(() => {
@@ -28,6 +31,8 @@ afterEach(() => {
   else process.env.POCKETPET_HOME = savedHome;
   if (savedClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = savedClaudeConfigDir;
+  if (savedLang === undefined) delete process.env.POCKETPET_LANG;
+  else process.env.POCKETPET_LANG = savedLang;
   rmSync(home, { recursive: true, force: true });
   rmSync(claudeDir, { recursive: true, force: true });
 });
@@ -96,21 +101,23 @@ function writeConfig(port: number): string {
 }
 
 describe("pocketpet up and forgiving run", () => {
-  it("starts the foreground bridge and prints pairing URLs plus the three steps", async () => {
+  it("starts the foreground bridge and prints pairing URLs plus the three English steps", async () => {
     writeConfig(0);
 
-    const result = await spawnCli(["up", "--no-hooks", "--no-service", "--no-open"], /Ctrl\+C to stop/);
+    const result = await spawnCli(["up", "--no-hooks", "--no-service", "--no-open"], /Ctrl\+C to stop/, {
+      POCKETPET_LANG: "en",
+    });
 
     expect(result.stdout).toContain(`Config: ${configPath(home)}`);
     expect(result.stdout).toMatch(/http:\/\/[^\s]+\?token=/);
-    expect(result.stdout).toContain("同一個 Wi-Fi");
-    expect(result.stdout).toContain("用相機掃描");
-    expect(result.stdout).toContain("加到主畫面");
+    expect(result.stdout).toContain("Same Wi-Fi");
+    expect(result.stdout).toContain("Scan with the camera");
+    expect(result.stdout).toContain("Add to Home Screen");
     expect(existsSync(configPath(home))).toBe(true);
   }, 30_000);
 
   it("run auto-creates a missing config on an ephemeral port and hints that hooks need init", async () => {
-    const result = await spawnCli(["run"], /Ctrl\+C to stop/, { POCKETPET_PORT: "0" });
+    const result = await spawnCli(["run"], /Ctrl\+C to stop/, { POCKETPET_PORT: "0", POCKETPET_LANG: "en" });
 
     expect(result.stdout).toContain(`Created config: ${configPath(home)}`);
     expect(result.stdout).toContain("pocketpet init");
@@ -176,21 +183,54 @@ describe("hasPocketPetHooks", () => {
 });
 
 describe("pairing output", () => {
-  it("prints the USB steps and a USB closing line when no LAN URL exists", () => {
+  const fakeIfaces = {
+    en0: [{ address: "192.168.1.5", family: "IPv4", internal: false, netmask: "255.255.255.0", mac: "aa", cidr: null }],
+  } as never;
+
+  function capturePrinting(options: Parameters<typeof printPairing>[0]): string {
     const lines: string[] = [];
     const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       lines.push(args.map(String).join(" "));
     });
     try {
-      printPairing({ port: 7788, token: "tok", qrHost: "ip", open: false, keepRunning: false, interfaces: {} as never });
+      printPairing(options);
     } finally {
       log.mockRestore();
     }
-    const output = lines.join("\n");
+    return lines.join("\n");
+  }
+
+  it("prints the USB steps and a USB closing line in English when no LAN URL exists", () => {
+    const output = capturePrinting({ port: 7788, token: "tok", qrHost: "ip", open: false, keepRunning: false, interfaces: {} as never });
+    expect(output).toContain("USB fallback (no LAN URL):");
     expect(output).toContain("adb reverse tcp:7788 tcp:7788");
     expect(output).toContain("http://127.0.0.1:7788/?token=tok");
     expect(output).toContain("USB URL on your phone");
     expect(output).not.toContain("Scan the QR");
+  });
+
+  it("prints the three pairing steps in Traditional Chinese when POCKETPET_LANG=zh-Hant", () => {
+    process.env.POCKETPET_LANG = "zh-Hant";
+    const output = capturePrinting({
+      port: 7788, token: "tok", qrHost: "ip", open: false, keepRunning: false, interfaces: fakeIfaces,
+    });
+    expect(output).toContain("http://192.168.1.5:7788/?token=tok");
+    expect(output).toContain("三步完成配對：");
+    expect(output).toContain("同一個 Wi-Fi");
+    expect(output).toContain("用相機掃描");
+    expect(output).toContain("加到主畫面");
+    expect(output).toContain("按 Ctrl+C 停止");
+    expect(output).not.toContain("Pair in three steps");
+  });
+
+  it("prints the Simplified Chinese USB fallback", () => {
+    process.env.POCKETPET_LANG = "zh-Hans";
+    const output = capturePrinting({ port: 7788, token: "tok", qrHost: "ip", open: false, keepRunning: false, interfaces: {} as never });
+    expect(output).toContain("USB 备用（没有局域网网址）：");
+    expect(output).toContain("找不到局域网 IPv4 地址。");
+    expect(output).toContain("http://127.0.0.1:7788/?token=tok");
+    expect(output).toContain("按 Ctrl+C 停止");
+    expect(output).not.toContain("配對");
   });
 });
 

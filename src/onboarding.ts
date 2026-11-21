@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
+import { languageNames, setupCopy, type Lang } from "./i18n.js";
 import { urlsForPort } from "./net.js";
 
 export type CommandRunner = (command: string, args: string[]) => string;
@@ -27,6 +28,10 @@ export type SetupHtmlInput = {
   port: number;
   /** Overrides the USB fallback URL; the setup route passes the tokenized one. */
   usbUrl?: string | null;
+  /** Page language; defaults to English. */
+  lang?: Lang;
+  /** Bonjour name used for the `.local` URL and the debug section. */
+  hostname?: string | null;
 };
 
 export type Asker = (question: string) => Promise<string>;
@@ -81,16 +86,34 @@ function tokenFromUrl(url: string | null | undefined): string | null {
   }
 }
 
-/** Self-contained Traditional Chinese pairing page. `qrSvg` is trusted (rendered by qrcode). */
+/**
+ * Which host the QR encodes. The server renders the QR from the first IP URL
+ * (pairingLinks defaults to `qrHost: "ip"`), so no SVG means no QR at all.
+ */
+function qrHostKind(qrSvg: string, ipUrls: string[], localUrl: string | null): QrHost | "none" {
+  if (!qrSvg) return "none";
+  if (ipUrls.length > 0) return "ip";
+  return localUrl ? "local" : "none";
+}
+
+function fontStack(lang: Lang): string {
+  if (lang === "zh-Hant") return '-apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif';
+  if (lang === "zh-Hans") return '-apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif';
+  return "-apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+}
+
+/** Self-contained pairing page in one of three languages. `qrSvg` is trusted (rendered by qrcode). */
 export function setupHtml(input: SetupHtmlInput): string {
-  const { qrSvg, ipUrls, localUrl, port } = input;
+  const { qrSvg, ipUrls, localUrl, port, hostname } = input;
+  const lang = input.lang ?? "en";
+  const copy = setupCopy[lang];
   const ipItems =
     ipUrls.length > 0
       ? ipUrls.map((url) => `        <li><code>${escapeHtml(url)}</code></li>`).join("\n")
-      : `        <li>搵唔到區網 IP 位址。請確認 Mac 已連上同一個 Wi-Fi。</li>`;
+      : `        <li>${copy.noIpNote}</li>`;
   const localSection = localUrl
-    ? `      <h2>穩定網址（Bonjour）</h2>
-      <p>如果 IP 位址成日轉，可以用呢個 <code>.local</code> 網址：</p>
+    ? `      <h2>${copy.localHeading}</h2>
+      <p>${copy.localBody}</p>
       <ul>
         <li><code>${escapeHtml(localUrl)}</code></li>
       </ul>`
@@ -102,19 +125,24 @@ export function setupHtml(input: SetupHtmlInput): string {
       ? `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`
       : `http://127.0.0.1:${port}/`);
   const qrSection = qrSvg
-    ? `  <p class="lead">用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 PocketPet。</p>
+    ? `  <p class="lead">${copy.leadQr}</p>
   <div class="qr">${qrSvg}</div>`
-    : `  <p class="lead">QR code 暫時無法產生（伺服器未能建立）。你仍然可以用下面嘅區網網址，或者用 USB 連接打開 PocketPet。</p>`;
+    : `  <p class="lead">${copy.leadNoQr}</p>`;
   const scanStep = qrSvg
-    ? `    <li><strong>用相機掃描</strong>：打開手機相機，對準上面嘅 QR code。</li>`
-    : `    <li><strong>開啟網址</strong>：喺手機瀏覽器打開上面其中一個區網網址。</li>`;
+    ? `    <li>${copy.stepScan}</li>`
+    : `    <li>${copy.stepOpenUrl}</li>`;
+  const usbOpen = copy.usbOpen.replace("{usbUrl}", escapeHtml(usbUrl));
+  const hostnameText = hostname?.trim() || copy.debugUnknown;
+  const langLinks = (Object.keys(languageNames) as Lang[])
+    .map((code) => `    <a href="?lang=${code}"${code === lang ? ' aria-current="page"' : ""}>${languageNames[code]}</a>`)
+    .join("\n");
 
   return `<!doctype html>
-<html lang="zh-Hant">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PocketPet 配對</title>
+<title>${copy.htmlTitle}</title>
 <style>
   :root { color-scheme: light dark; }
   body {
@@ -122,13 +150,16 @@ export function setupHtml(input: SetupHtmlInput): string {
     padding: 24px 16px 48px;
     background: #f6f4ef;
     color: #24211c;
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif;
+    font-family: ${fontStack(lang)};
     line-height: 1.6;
   }
   main { max-width: 560px; margin: 0 auto; }
   h1 { font-size: 1.6rem; margin: 0 0 8px; }
   h2 { font-size: 1.1rem; margin: 28px 0 8px; }
   .lead { margin: 0 0 20px; color: #57514a; }
+  .lang { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.9rem; margin: 0 0 20px; }
+  .lang a { color: #57514a; }
+  .lang a[aria-current="page"] { color: #24211c; font-weight: 600; text-decoration: none; }
   .qr {
     background: #fff;
     border-radius: 16px;
@@ -148,53 +179,69 @@ export function setupHtml(input: SetupHtmlInput): string {
   ul li { background: #fff; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
   .usb { border-top: 1px solid #ddd6c8; margin-top: 32px; }
   .troubleshoot { border-top: 1px solid #ddd6c8; margin-top: 28px; padding-top: 8px; }
+  .debug { border-top: 1px solid #ddd6c8; margin-top: 28px; padding-top: 8px; }
   pre { background: #24211c; color: #f6f4ef; border-radius: 10px; padding: 12px; overflow-x: auto; }
   pre code { font-size: 0.85rem; }
   .note { color: #6b655d; font-size: 0.9rem; margin-top: 28px; }
   @media (prefers-color-scheme: dark) {
     body { background: #171512; color: #f3efe7; }
-    .lead, .note { color: #b3aca2; }
+    .lead, .note, .lang a { color: #b3aca2; }
+    .lang a[aria-current="page"] { color: #f3efe7; }
     .qr, ul li { background: #24211c; }
-    .usb, .troubleshoot { border-color: #3a352e; }
+    .usb, .troubleshoot, .debug { border-color: #3a352e; }
   }
 </style>
 </head>
 <body>
 <main>
-  <h1>PocketPet 配對</h1>
+  <nav class="lang" aria-label="${copy.languageHeading}">
+${langLinks}
+  </nav>
+  <h1>${copy.heading}</h1>
 ${qrSection}
 
-  <h2>三步完成配對</h2>
+  <h2>${copy.stepsHeading}</h2>
   <ol>
-    <li><strong>同一個 Wi-Fi</strong>：確認 Mac 同手機連住同一個 Wi-Fi 網絡。</li>
+    <li>${copy.stepWifi}</li>
 ${scanStep}
-    <li><strong>加到主畫面</strong>：喺瀏覽器選單揀「加到主畫面」，之後一開即用。</li>
+    <li>${copy.stepHomeScreen}</li>
   </ol>
 
-  <h2>區網網址</h2>
+  <h2>${copy.lanHeading}</h2>
   <ul>
 ${ipItems}
   </ul>
 ${localSection}
   <section class="usb">
-    <h2>唔同 Wi-Fi？用 USB 線</h2>
-    <p>用 USB 線連接手機同 Mac，然後喺電腦執行：</p>
+    <h2>${copy.usbHeading}</h2>
+    <p>${copy.usbBody}</p>
     <pre><code>adb reverse tcp:${port} tcp:${port}</code></pre>
-    <p>再用手機開 <code>${escapeHtml(usbUrl)}</code>。</p>
+    <p>${usbOpen}</p>
   </section>
 
   <section class="troubleshoot">
-    <h2>手機連唔到？</h2>
+    <h2>${copy.troubleshootHeading}</h2>
     <ul>
-      <li><strong>ERR_TOO_MANY_RETRIES／ERR_SSL_PROTOCOL_ERROR</strong>：Chrome／Edge 嘅「Always use secure connections（永遠使用安全連線）」或 VPN 會將 <code>http</code> 升級做 <code>https</code>。關閉該設定，或改用 Safari／Firefox；iPhone 亦要關 VPN／iCloud Private Relay。</li>
-      <li><strong>unauthorized</strong>：你開咗冇 token 嘅 <code>/</code>。請掃 QR，或用上面列出嘅帶 token 網址。</li>
-      <li><strong>配對頁只限 Mac</strong>：<code>/setup</code> 只供 Mac；手機請掃 QR。</li>
-      <li><strong>完全連唔到</strong>：確認手機同 Mac 同一個 Wi-Fi／subnet（guest network／AP isolation 唔得）；必要時用上面的 USB <code>adb reverse</code>。</li>
+      <li>${copy.troubleshootRetries}</li>
+      <li>${copy.troubleshootUnauthorized}</li>
+      <li>${copy.troubleshootMacOnly}</li>
+      <li>${copy.troubleshootUnreachable}</li>
     </ul>
   </section>
 
-  <p class="note"><strong>同一個 QR 可以重複使用</strong>：每部手機各自掃一次，直到你更改 token 為止。</p>
-  <p class="note">配對頁只供 Mac 開啟；手機唔需要開 <code>/setup</code>。配對後手機地址欄只剩 <code>/</code>，嗰個 URL 冇 token，唔好分享俾其他人——要加新手機，請返嚟呢一頁掃 QR。</p>
+  <section class="debug">
+    <h2>${copy.debugHeading}</h2>
+    <ul>
+      <li><strong>${copy.debugPort}</strong>: <code>${port}</code></li>
+      <li><strong>${copy.debugHostname}</strong>: <code>${escapeHtml(hostnameText)}</code></li>
+      <li><strong>${copy.debugQrHost}</strong>: <code>${qrHostKind(qrSvg, ipUrls, localUrl)}</code></li>
+      <li><strong>${copy.debugScope}</strong>: ${copy.debugScopeValue}</li>
+      <li><strong>${copy.debugQrValidity}</strong>: ${copy.debugQrValidityValue}</li>
+    </ul>
+  </section>
+
+  <p class="note">${copy.reusableNote}</p>
+  <p class="note">${copy.macOnlyNote}</p>
 </main>
 </body>
 </html>
@@ -202,20 +249,22 @@ ${localSection}
 }
 
 /** Shown when /setup is opened from a phone or a non-loopback Host. Contains no token. */
-export function setupDeniedHtml(port: number): string {
+export function setupDeniedHtml(port: number, lang: Lang = "en"): string {
+  const copy = setupCopy[lang];
+  const setupUrl = `http://127.0.0.1:${port}/setup`;
   return `<!doctype html>
-<html lang="zh-Hant">
+<html lang="${lang}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>PocketPet 配對頁只限 Mac</title>
+<title>${copy.deniedHtmlTitle}</title>
 <style>
   body {
     margin: 0;
     padding: 40px 20px;
     background: #f6f4ef;
     color: #24211c;
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", sans-serif;
+    font-family: ${fontStack(lang)};
     line-height: 1.7;
   }
   main { max-width: 520px; margin: 0 auto; }
@@ -230,9 +279,9 @@ export function setupDeniedHtml(port: number): string {
 </head>
 <body>
 <main>
-  <h1>配對頁只限 Mac</h1>
-  <p>呢個配對頁只可以喺 Mac 本機開啟。請喺 Mac 開 <code>http://127.0.0.1:${port}/setup</code>（或執行 <code>pocketpet up</code>），然後用手機相機掃描頁面上嘅 QR。</p>
-  <p class="note">每部手機各自掃一次；同一個 QR 可以重複使用，直到你更改 token。手機唔需要開 <code>/setup</code>。</p>
+  <h1>${copy.deniedHeading}</h1>
+  <p>${copy.deniedBody.replace("{setupUrl}", escapeHtml(setupUrl))}</p>
+  <p class="note">${copy.deniedNote}</p>
 </main>
 </body>
 </html>

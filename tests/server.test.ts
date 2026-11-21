@@ -117,15 +117,49 @@ describe("bridge server setup page", () => {
   });
 
   it("refuses a non-loopback Host header with a Mac-only page (DNS rebinding)", async () => {
+    const phrases = { en: "Mac-only", "zh-Hant": "只限 Mac", "zh-Hans": "仅限 Mac" } as const;
     for (const host of ["evil.example", `evil.example:${bridge.port}`, `localhost:${bridge.port + 1}`]) {
-      const res = await rawGet("/setup", { host });
-      expect(res.status, `Host: ${host}`).toBe(403);
-      expect(res.headers["content-type"], `Host: ${host}`).toBe("text/html; charset=utf-8");
-      expect(res.headers["cache-control"], `Host: ${host}`).toBe("no-store");
-      expect(res.body, `Host: ${host}`).toContain("只限 Mac");
-      expect(res.body, `Host: ${host}`).toContain("重複使用");
-      expect(res.body).not.toContain(bridge.config.token);
+      for (const [lang, phrase] of Object.entries(phrases)) {
+        const res = await rawGet(`/setup?lang=${lang}`, { host });
+        expect(res.status, `Host: ${host} lang: ${lang}`).toBe(403);
+        expect(res.headers["content-type"], `Host: ${host} lang: ${lang}`).toBe("text/html; charset=utf-8");
+        expect(res.headers["cache-control"], `Host: ${host} lang: ${lang}`).toBe("no-store");
+        expect(res.body, `Host: ${host} lang: ${lang}`).toContain(phrase);
+        expect(res.body).not.toContain(bridge.config.token);
+      }
     }
+  });
+
+  it("localizes the 403 page from Accept-Language", async () => {
+    const res = await rawGet("/setup", { host: "evil.example", "accept-language": "zh-TW,zh;q=0.9" });
+    expect(res.status).toBe(403);
+    expect(res.body).toContain('<html lang="zh-Hant">');
+    expect(res.body).toContain("只限 Mac");
+    expect(res.body).not.toContain(bridge.config.token);
+  });
+
+  it("localizes the setup page via ?lang and Accept-Language", async () => {
+    const traditional = await rawGet("/setup?lang=zh-Hant");
+    expect(traditional.status).toBe(200);
+    expect(traditional.body).toContain('<html lang="zh-Hant">');
+    expect(traditional.body).toContain("三步完成配對");
+
+    const simplified = await rawGet("/setup?lang=zh-Hans");
+    expect(simplified.status).toBe(200);
+    expect(simplified.headers["content-type"]).toBe("text/html; charset=utf-8");
+    expect(simplified.headers["cache-control"]).toBe("no-store");
+    expect(simplified.body).toContain('<html lang="zh-Hans">');
+    expect(simplified.body).toContain("三步完成配对");
+
+    const english = await rawGet("/setup?lang=en");
+    expect(english.status).toBe(200);
+    expect(english.body).toContain('<html lang="en">');
+    expect(english.body).toContain("Pair in three steps");
+
+    const detected = await rawGet("/setup", { "accept-language": "zh-CN,zh;q=0.9" });
+    expect(detected.status).toBe(200);
+    expect(detected.body).toContain('<html lang="zh-Hans">');
+    expect(detected.body).toContain("三步完成配对");
   });
 });
 

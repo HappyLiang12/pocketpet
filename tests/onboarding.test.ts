@@ -96,8 +96,9 @@ describe("setupHtml", () => {
     expect(html).toContain(base.localUrl);
   });
 
-  it("includes the three pairing steps, the .local option and the USB fallback", () => {
-    const html = setupHtml(base);
+  it("includes the three pairing steps, the .local option and the USB fallback in Traditional Chinese", () => {
+    const html = setupHtml({ ...base, lang: "zh-Hant" });
+    expect(html).toContain('<html lang="zh-Hant">');
     expect(html).toContain("同一個 Wi-Fi");
     expect(html).toContain("相機");
     expect(html).toContain("加到主畫面");
@@ -111,8 +112,31 @@ describe("setupHtml", () => {
     expect(html).toContain("http://127.0.0.1:7788/?token=tok");
   });
 
+  it("defaults to English copy", () => {
+    const html = setupHtml(base);
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain("Pair in three steps");
+    expect(html).toContain("Same Wi-Fi");
+    expect(html).toContain("Scan with the camera");
+    expect(html).toContain("Add to Home Screen");
+    expect(html).toContain("reusable until token changes");
+    expect(html).not.toContain("三步完成配對");
+  });
+
+  it("renders Simplified Chinese copy", () => {
+    const html = setupHtml({ ...base, lang: "zh-Hans" });
+    expect(html).toContain('<html lang="zh-Hans">');
+    expect(html).toContain("三步完成配对");
+    expect(html).toContain("用相机扫描");
+    expect(html).toContain("添加到主屏幕");
+    expect(html).toContain("局域网网址");
+    expect(html).not.toContain("配對");
+    expect(html).not.toContain("區網");
+  });
+
   it("explains Mac-only access to the setup page without a token", () => {
-    const html = setupDeniedHtml(7788);
+    const html = setupDeniedHtml(7788, "zh-Hant");
+    expect(html).toContain('<html lang="zh-Hant">');
     expect(html).toContain("只限 Mac");
     expect(html).toContain("127.0.0.1:7788");
     expect(html).toContain("重複使用");
@@ -132,7 +156,7 @@ describe("setupHtml", () => {
   });
 
   it("omits the QR card and shows a QR-unavailable note when the SVG is empty", () => {
-    const html = setupHtml({ ...base, qrSvg: "" });
+    const html = setupHtml({ ...base, qrSvg: "", lang: "zh-Hant" });
     expect(html).not.toContain('class="qr"');
     expect(html).not.toContain("對準上面嘅 QR code");
     expect(html).toContain("QR code 暫時無法產生");
