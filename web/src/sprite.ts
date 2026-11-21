@@ -27,13 +27,18 @@ export class PetRenderer {
   private frame = 0;
   private last = performance.now();
   private raf = 0;
+  private generation = 0;
 
   constructor(private canvas: HTMLCanvasElement) {}
 
   async load(url: string): Promise<void> {
+    const generation = ++this.generation;
+    this.image = null;
+    this.frame = 0;
     const image = new Image();
     image.src = url;
     await image.decode();
+    if (generation !== this.generation) return;
     this.image = image;
     this.frame = 0;
   }
@@ -42,6 +47,7 @@ export class PetRenderer {
     if (state === this.state) return;
     this.state = state;
     this.frame = 0;
+    this.last = performance.now();
   }
 
   start(): void {

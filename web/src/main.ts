@@ -94,8 +94,12 @@ async function selectPet(id: string): Promise<void> {
   await applyPet(id);
 }
 
+let applyToken = 0;
+
 async function applyPet(id: string | null): Promise<void> {
+  const token = ++applyToken;
   if (pets.length === 0) await loadPets();
+  if (token !== applyToken) return;
   const pet = pets.find((candidate) => candidate.id === id) ?? pets[0];
   petId = pet?.id ?? null;
   stage.dataset.petId = pet?.id ?? "fallback";
@@ -103,8 +107,12 @@ async function applyPet(id: string | null): Promise<void> {
   if (pet) {
     try {
       await renderer.load(pet.spriteUrl);
+      if (token !== applyToken) return;
       stage.dataset.petReady = "true";
     } catch {
+      if (token !== applyToken) return;
+      petId = null;
+      stage.dataset.petId = "fallback";
       stage.dataset.petReady = "false";
     }
   } else {

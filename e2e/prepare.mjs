@@ -39,3 +39,6 @@ writeFileSync(join(home, "pets", "testpet", "spritesheet.png"), png(384, 468));
 mkdirSync(join(home, "pets", "testpet2"), { recursive: true });
 writeFileSync(join(home, "pets", "testpet2", "pet.json"), JSON.stringify({ id: "testpet2", displayName: "Test Pet 2", description: "", spritesheetPath: "spritesheet.png" }));
 writeFileSync(join(home, "pets", "testpet2", "spritesheet.png"), png(384, 468));
+mkdirSync(join(home, "pets", "brokenpet"), { recursive: true });
+writeFileSync(join(home, "pets", "brokenpet", "pet.json"), JSON.stringify({ id: "brokenpet", displayName: "Broken Pet", description: "", spritesheetPath: "spritesheet.png" }));
+writeFileSync(join(home, "pets", "brokenpet", "spritesheet.png"), Buffer.from("not a png"));

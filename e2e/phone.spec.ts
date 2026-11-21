@@ -36,4 +36,23 @@ test("loads the active pet sprite and switches pets from the drawer", async ({ p
   await page.locator("#gear").click();
   await page.locator('#pet-list input[value="local:testpet2"]').check();
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet2");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+});
+
+test("falls back to the blob when a pet spritesheet cannot decode", async ({ page }) => {
+  await fetch(`http://127.0.0.1:7799/api/active-pet?token=${TOKEN}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "local:testpet" }),
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+  await page.locator("#gear").click();
+  await page.locator('#pet-list input[value="local:brokenpet"]').check();
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "fallback");
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "false");
+  // The failed sheet must be discarded: the fallback blob is opaque, the previous fixture atlas is fully transparent.
+  await expect.poll(() => page.locator("#stage canvas").evaluate((canvas: HTMLCanvasElement) => canvas.getContext("2d")!.getImageData(60, 80, 1, 1).data[3])).toBeGreaterThan(0);
 });
