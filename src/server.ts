@@ -6,7 +6,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import QRCode from "qrcode";
 import type { Config } from "./config.js";
 import { saveConfig } from "./config.js";
-import { normalizeAppearance, type Appearance } from "./appearance.js";
+import { mergeAppearance, type Appearance, type AppearanceOverrides } from "./appearance.js";
 import { hostInfo, type HostInfo } from "./host.js";
 import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
@@ -92,6 +92,9 @@ function petdexSpriteName(raw: string): string | null {
   } catch {
     return null;
   }
+}
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function serveFile(res: ServerResponse, file: string): void {
   const data = readFileSync(file);
@@ -258,12 +261,24 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
           return json(res, 400, { error: { code: "invalid_json", message: "invalid JSON" } });
         }
         const body = (value ?? {}) as { appearance?: unknown; activePet?: unknown };
-        const next = normalizeAppearance(body.appearance ?? config.appearance);
-        const pets = await petSummaries();
-        const petId = body.activePet === undefined ? config.activePet : body.activePet;
-        if (petId !== null && (typeof petId !== "string" || !pets.some((pet) => pet.id === petId))) {
-          return json(res, 400, { error: { code: "unknown_pet", message: "unknown pet" } });
+        // Partial-merge semantics: a provided appearance object is merged over the current
+        // host look, so callers may omit fields without resetting them to defaults.
+        if (body.appearance !== undefined && !isPlainObject(body.appearance)) {
+          return json(res, 400, { error: { code: "invalid_appearance", message: "appearance must be an object" } });
         }
+        const next = mergeAppearance(config.appearance, (body.appearance ?? {}) as AppearanceOverrides);
+        const requestedPet = body.activePet;
+        if (requestedPet !== undefined && requestedPet !== null) {
+          if (typeof requestedPet !== "string") {
+            return json(res, 400, { error: { code: "unknown_pet", message: "unknown pet" } });
+          }
+          // Only a supplied pet id needs the catalog; appearance-only and clear-pet saves skip it.
+          const pets = await petSummaries();
+          if (!pets.some((pet) => pet.id === requestedPet)) {
+            return json(res, 400, { error: { code: "unknown_pet", message: "unknown pet" } });
+          }
+        }
+        const petId = requestedPet === undefined ? config.activePet : requestedPet;
         config.appearance = next;
         config.activePet = petId;
         saveConfig(home, config);
