@@ -58,6 +58,15 @@ describe("dictionary", () => {
     }
   });
 
+  it("localizes layout mode labels instead of the raw enum", () => {
+    expect(t("en", "look.layoutStack")).toBe("Stack");
+    expect(t("en", "look.layoutFree")).toBe("Free");
+    expect(t("zh-Hant", "look.layoutStack")).toBe("堆疊");
+    expect(t("zh-Hant", "look.layoutFree")).toBe("自由");
+    expect(t("zh-Hans", "look.layoutStack")).toBe("堆叠");
+    expect(t("zh-Hans", "look.layoutFree")).toBe("自由");
+  });
+
   it("localizes every wake status with the existing Traditional Chinese copy", () => {
     expect({
       active: t("zh-Hant", "wake.active"),

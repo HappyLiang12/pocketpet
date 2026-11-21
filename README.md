@@ -50,7 +50,7 @@ pocketpet up
 `/setup` opens only on the computer running the bridge (loopback, with a Host allowlist). The phone scans the QR; it does not open `/setup`. The page is one scrolling dashboard with three anchored cards, and pairing still works without JavaScript:
 
 - **Pair**: the server-rendered QR, LAN and `.local` URLs, USB instructions, the reusable-QR note, and an **Open phone view** action.
-- **Look**: a folded/wide preview, the host default appearance, the host pet picker, **Open Studio**, and a host reset. Host defaults are written only here.
+- **Look**: a folded/wide preview, the host default appearance, the host pet picker, **Open Studio**, and a host reset. Host defaults are written only from this setup UI.
 - **System**: bridge and login-service status, port, bridge version, the actual host OS and version, the loopback scope, log path, copy diagnostics, and service commands.
 
 Agent and update cards, agent setup, and update controls are not part of this slice; they remain later work. No agent setup or update UI is added here.

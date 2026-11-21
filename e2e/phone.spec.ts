@@ -394,6 +394,110 @@ test("a follow-host phone applies a host Studio change", async ({ page }) => {
   await expect.poll(async () => page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--pet-scale").trim())).toBe("1.5");
 });
 
+test("localizes the Look layout summary instead of the raw mode", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await openTab(page, "look");
+  await expect(page.locator("#look-summary")).toContainText("堆疊 · 16");
+  await setHostLook({ appearance: { ...DEFAULT_APPEARANCE, layout: { mode: "free", gap: 24 } } });
+  await expect(page.locator("#look-summary")).toContainText("自由 · 24");
+});
+
+test("keeps a Studio draft stable when a host snapshot arrives while it is open", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const frames: string[] = [];
+  page.on("websocket", (socket) => {
+    socket.on("framereceived", (event) => {
+      frames.push(String(event.payload));
+    });
+  });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await openTab(page, "look");
+  await page.locator("#open-studio").click();
+  const studio = page.locator("#studio");
+  await expect(studio).toBeVisible();
+  // A draft theme the incoming host snapshot would otherwise repaint.
+  await studio.locator('[data-field="theme"]').selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(studio.locator('[data-field="clock.scale"]')).toHaveValue("100");
+
+  await setHostLook({
+    appearance: { ...DEFAULT_APPEARANCE, clock: { ...DEFAULT_APPEARANCE.clock, scale: 140 }, theme: "light" },
+  });
+  // The broadcast proves the page received the host change while Studio was open.
+  await expect.poll(() => frames.some((frame) => frame.includes('"scale":140'))).toBe(true);
+
+  // The open draft wins: no page repaint and no theme override underneath.
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(studio.locator('[data-field="clock.scale"]')).toHaveValue("100");
+  const previewScale = await studio.locator("[data-stage]").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(previewScale).toBe("1");
+
+  // Cancel restores the pre-open page state rather than the skipped host paint.
+  await studio.locator('[data-act="cancel"]').click();
+  await expect(studio).toBeHidden();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  const pageScale = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(pageScale).toBe("1");
+
+  // The host change was still recorded; a fresh load picks it up.
+  await page.reload();
+  await expect.poll(
+    () => page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim()),
+  ).toBe("1.4");
+});
+
+test("yields one phone Escape to the topmost Studio layer", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await openTab(page, "look");
+  const sheet = page.locator("#sheet");
+  await expect(sheet).toHaveAttribute("data-open", "true");
+  await page.locator("#open-studio").click();
+  const studio = page.locator("#studio");
+  await expect(studio).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  // The first Escape closes only the Studio; the sheet and its visible trigger stay.
+  await expect(studio).toBeHidden();
+  await expect(sheet).toHaveAttribute("data-open", "true");
+  await expect(page.locator("#open-studio")).toBeFocused();
+
+  // A second Escape then dismisses the sheet from that visible trigger.
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveAttribute("data-open", "false");
+  await expect(page.locator("#sheet-handle")).toBeFocused();
+});
+
+test("keeps the sheet open when Escape asks to discard a dirty Studio", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await openTab(page, "look");
+  await page.locator("#open-studio").click();
+  const studio = page.locator("#studio");
+  await expect(studio).toBeVisible();
+  await studio.locator('[data-field="clock.scale"]').fill("130");
+  await studio.locator('[data-field="clock.scale"]').dispatchEvent("input");
+  // Escape inside a numeric field reverts the field first; leave it to reach
+  // the dirty-draft confirm.
+  await studio.locator('[data-element="clock"]').click();
+
+  await page.keyboard.press("Escape");
+  await expect(studio.locator("[data-confirm]")).toBeVisible();
+  await expect(studio).toBeVisible();
+  await expect(page.locator("#sheet")).toHaveAttribute("data-open", "true");
+
+  await studio.locator('[data-act="discard"]').click();
+  await expect(studio).toBeHidden();
+  await expect(page.locator("#sheet")).toHaveAttribute("data-open", "true");
+  await expect(page.locator("#open-studio")).toBeFocused();
+});
+
 // These tests mutate the shared host state. Restore the seeded defaults with
 // the setup API even when a test fails so later spec files do not inherit it.
 test.afterAll(async () => {

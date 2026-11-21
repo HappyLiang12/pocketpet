@@ -339,10 +339,11 @@ function renderLook(appearance: Appearance): void {
   const petValue = selectedPet?.name
     ?? selectedId
     ?? (pets.length === 0 ? t(lang, "look.noPets") : t(lang, "look.notSelected"));
+  const layoutLabel = t(lang, appearance.layout.mode === "free" ? "look.layoutFree" : "look.layoutStack");
   const summary: Array<[string, string]> = [
     [t(lang, "look.clock"), `${appearance.clock.scale}%`],
     [t(lang, "look.petSize"), `${appearance.pet.scale}%`],
-    [t(lang, "look.layout"), `${appearance.layout.mode} · ${appearance.layout.gap}`],
+    [t(lang, "look.layout"), `${layoutLabel} · ${appearance.layout.gap}`],
     [t(lang, "look.pet"), petValue],
   ];
   lookSummary.replaceChildren(...summary.flatMap(([term, value]) => {
@@ -398,7 +399,11 @@ async function applyPet(requested: string | null): Promise<void> {
   if (!hadPets && pets.length > 0) renderLook(currentAppearance());
 }
 
-function applyLook(): void {
+function applyLook(force = false): void {
+  // An open Studio is a modal draft: host snapshots and system appearance
+  // changes must not repaint the page or the Studio preview underneath. The
+  // Studio's own save forces the page to the saved look before it closes.
+  if (!force && document.getElementById("studio")) return;
   const appearance = currentAppearance();
   applyStage(stage, appearance);
   renderer.setReducedMotion(resolveMotion(appearance.motion) === "reduced");
@@ -566,7 +571,7 @@ function boot(): void {
         };
         localLook = nextLocal;
         localWriteFailed = !writeLocalLook(nextLocal);
-        applyLook();
+        applyLook(true);
       },
     });
   });
@@ -589,7 +594,11 @@ function boot(): void {
   scrim.addEventListener("click", closeSheet);
   openLookButton.addEventListener("click", () => showTab("look"));
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && sheet.dataset.open === "true") closeSheet();
+    if (event.key !== "Escape") return;
+    // The Studio overlay owns Escape while it is open: yielding here keeps one
+    // Escape from dismissing both the topmost dialog and the sheet underneath.
+    if (document.getElementById("studio")) return;
+    if (sheet.dataset.open === "true") closeSheet();
   });
   petSearch.addEventListener("input", renderPetList);
   langSelect.addEventListener("change", () => {

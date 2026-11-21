@@ -217,6 +217,22 @@ test.describe("setup look", () => {
     await phone.close();
   });
 
+  test("localizes the setup Look layout summary", async ({ page }) => {
+    await page.request.put("/api/setup/look", {
+      headers: SETUP_HEADERS,
+      data: { appearance: DEFAULT_APPEARANCE },
+    });
+    await page.goto("/setup");
+    const summary = page.locator("#look-app .look-summary");
+    await expect(summary).toContainText("Stack · 16");
+    await page.request.put("/api/setup/look", {
+      headers: SETUP_HEADERS,
+      data: { appearance: { ...DEFAULT_APPEARANCE, layout: { mode: "free", gap: 24 } } },
+    });
+    await page.reload();
+    await expect(summary).toContainText("Free · 24");
+  });
+
   // These tests mutate the shared host state. Restore the seeded defaults with
   // the same setup API contract even when a test fails, so later spec files
   // (phone.spec.ts expects local:testpet) do not inherit the change.
