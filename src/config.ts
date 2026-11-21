@@ -5,6 +5,15 @@ import { join } from "node:path";
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
+const DEFAULT_PORT = 7788;
+
+/** Override for the very first config only; invalid values fall back to the default. */
+function initialPort(env: NodeJS.ProcessEnv): number {
+  const raw = env.FOLDPET_PORT?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_PORT;
+  const port = Number(raw);
+  return Number.isInteger(port) && port <= 65535 ? port : DEFAULT_PORT;
+}
 
 export type QuietHours = { start: string; end: string };
 export type Config = {
@@ -23,14 +32,14 @@ export function configPath(home: string): string {
   return join(home, "config.json");
 }
 
-export function ensureConfig(home: string): Config {
+export function ensureConfig(home: string, env: NodeJS.ProcessEnv = process.env): Config {
   mkdirSync(join(home, "pets"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "cache", "petdex"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "logs"), { recursive: true, mode: DIR_MODE });
   if (existsSync(configPath(home))) return loadConfig(home);
   const config: Config = {
     token: randomBytes(32).toString("base64url"),
-    port: 7788,
+    port: initialPort(env),
     activePet: null,
     sleepAfterMinutes: 10,
     quietHours: null,

@@ -1,11 +1,17 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { configPath, ensureConfig, loadConfig, saveConfig } from "../src/config.js";
 
 let home = "";
-afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
+let savedPort: string | undefined;
+beforeEach(() => { savedPort = process.env.FOLDPET_PORT; });
+afterEach(() => {
+  if (savedPort === undefined) delete process.env.FOLDPET_PORT;
+  else process.env.FOLDPET_PORT = savedPort;
+  if (home) rmSync(home, { recursive: true, force: true });
+});
 
 describe("config store", () => {
   it("creates a config with a long random token and dirs", () => {
@@ -51,5 +57,41 @@ describe("config store", () => {
     home = mkdtempSync(join(tmpdir(), "foldpet-"));
     writeFileSync(configPath(home), "{not json");
     expect(() => loadConfig(home)).toThrow();
+  });
+});
+
+describe("FOLDPET_PORT override on first creation", () => {
+  it("creates a new config on the requested port", () => {
+    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    process.env.FOLDPET_PORT = "0";
+
+    expect(ensureConfig(home).port).toBe(0);
+    expect(loadConfig(home).port).toBe(0);
+  });
+
+  it("accepts another valid port", () => {
+    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    process.env.FOLDPET_PORT = "9099";
+
+    expect(ensureConfig(home).port).toBe(9099);
+  });
+
+  it("never overrides a config that already exists", () => {
+    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const created = ensureConfig(home);
+    expect(created.port).toBe(7788);
+    process.env.FOLDPET_PORT = "0";
+
+    expect(ensureConfig(home).port).toBe(7788);
+    expect(loadConfig(home).port).toBe(7788);
+  });
+
+  it("falls back to 7788 for an invalid value", () => {
+    home = mkdtempSync(join(tmpdir(), "foldpet-"));
+    for (const value of ["abc", "-1", "65536", "70000", "", "12.5"]) {
+      rmSync(configPath(home), { force: true });
+      process.env.FOLDPET_PORT = value;
+      expect(ensureConfig(home).port, `value: ${JSON.stringify(value)}`).toBe(7788);
+    }
   });
 });

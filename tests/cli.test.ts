@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,10 +52,15 @@ type SpawnedCli = { code: number | null; signal: NodeJS.Signals | null; stdout: 
  * child exits), then terminates it. The bridge runs until killed, so every
  * smoke ends with an explicit signal.
  */
-async function spawnCli(args: string[], until: RegExp, timeoutMs = 20_000): Promise<SpawnedCli> {
+async function spawnCli(
+  args: string[],
+  until: RegExp,
+  env: Record<string, string> = {},
+  timeoutMs = 20_000,
+): Promise<SpawnedCli> {
   const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], {
     cwd: process.cwd(),
-    env: { ...process.env, FOLDPET_HOME: home, CLAUDE_CONFIG_DIR: claudeDir },
+    env: { ...process.env, FOLDPET_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -103,13 +108,16 @@ describe("fold-pet up and forgiving run", () => {
     expect(existsSync(configPath(home))).toBe(true);
   }, 30_000);
 
-  it("run auto-creates a missing config and hints that hooks need init", async () => {
-    const result = await spawnCli(["run"], /Ctrl\+C to stop/);
+  it("run auto-creates a missing config on an ephemeral port and hints that hooks need init", async () => {
+    const result = await spawnCli(["run"], /Ctrl\+C to stop/, { FOLDPET_PORT: "0" });
 
     expect(result.stdout).toContain(`Created config: ${configPath(home)}`);
     expect(result.stdout).toContain("fold-pet init");
     expect(result.stdout).toMatch(/http:\/\/[^\s]+\?token=/);
+    expect(result.stdout).toContain("Ctrl+C to stop");
     expect(existsSync(configPath(home))).toBe(true);
+    expect(JSON.parse(readFileSync(configPath(home), "utf8")).port).toBe(0);
+    expect(result.signal ?? result.code).not.toBeNull();
   }, 30_000);
 
   it("run --service prints only the listening line and no tokenized URLs", async () => {
