@@ -77,6 +77,21 @@ describe("bridge server", () => {
   });
 });
 
+describe("bridge server setup page", () => {
+  it("renders loopback pairing links without a token using the actual port", async () => {
+    const res = await fetch(`${base()}/setup`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    const html = await res.text();
+    expect(html).toContain("<svg");
+    expect(html).toContain(`?token=${encodeURIComponent(bridge.config.token)}`);
+    expect(html).toContain(`127.0.0.1:${bridge.port}/`);
+    expect(bridge.port).not.toBe(bridge.config.port);
+  });
+});
+
 describe("bridge server security", () => {
   it("serves loopback health without a token", async () => {
     const res = await fetch(`${base()}/health`);

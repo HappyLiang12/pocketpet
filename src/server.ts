@@ -3,11 +3,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { WebSocketServer, WebSocket } from "ws";
+import QRCode from "qrcode";
 import type { Config } from "./config.js";
 import { saveConfig } from "./config.js";
 import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, setTokenCookie } from "./auth.js";
+import { localHostname, pairingLinks, setupHtml } from "./onboarding.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
 
@@ -120,6 +122,10 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
     for (const client of wsClients) if (client.readyState === WebSocket.OPEN) client.send(data);
   };
 
+  // Assigned from the real socket address after listen so `/setup` links use the actual port
+  // (tests listen on port 0, which differs from config.port).
+  let port = opts.port ?? config.port;
+
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -138,6 +144,25 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
       if (path === "/health") {
         if (!isLoopback(req.socket.remoteAddress)) return text(res, 403, "loopback only");
         return json(res, 200, { ok: true, sessions: aggregator.snapshot(null, { sleepAfterMinutes: 0, quietHours: null }).sessions.length });
+      }
+      if (req.method === "GET" && path === "/setup") {
+        if (!isLoopback(req.socket.remoteAddress)) return text(res, 403, "loopback only");
+        const links = pairingLinks(port, config.token, { hostname: localHostname() });
+        let qrSvg = "";
+        if (links.qrUrl) {
+          try {
+            qrSvg = await QRCode.toString(links.qrUrl, { type: "svg", margin: 1, width: 320 });
+          } catch {
+            qrSvg = "";
+          }
+        }
+        const html = setupHtml({ qrSvg, ipUrls: links.ipUrls, localUrl: links.localUrl, port });
+        res.writeHead(200, {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+        });
+        return res.end(html);
       }
       if (!isAuthorized(req, url, config.token)) return text(res, 401, "unauthorized");
       if (url.searchParams.get("token") === config.token) setTokenCookie(res, config.token);
@@ -229,7 +254,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
     server.listen(opts.port ?? config.port, "0.0.0.0", () => resolveListen());
   });
   const address = server.address();
-  const port = typeof address === "object" && address ? address.port : (opts.port ?? config.port);
+  port = typeof address === "object" && address ? address.port : (opts.port ?? config.port);
 
   return {
     port,
