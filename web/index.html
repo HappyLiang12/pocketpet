@@ -9,7 +9,7 @@
     <div id="app">
       <header id="top">
         <div id="brand">PocketPet</div>
-        <div id="conn" data-state="connecting">Connecting</div>
+        <div id="conn" data-state="connecting" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="conn-text">Connecting</span></div>
       </header>
       <main id="main">
         <section id="stage" data-stage>
@@ -22,6 +22,7 @@
         <aside id="sessions"></aside>
       </main>
       <footer id="chips"></footer>
+      <div id="scrim" data-visible="false" aria-hidden="true"></div>
       <aside id="sheet" data-open="false">
         <button id="sheet-handle" type="button" aria-label="Open panel" aria-expanded="false" aria-controls="sheet-body"></button>
         <div id="sheet-tabs" role="tablist">
@@ -31,7 +32,7 @@
         </div>
         <div id="sheet-body">
           <section id="panel-live" role="tabpanel" data-panel="live" aria-labelledby="tab-live">
-            <p id="live-connection"></p>
+            <p id="live-connection" role="status" aria-live="polite"></p>
             <button id="open-look" type="button"></button>
             <div id="install-hint" hidden>
               <p id="install-hint-text"></p>
@@ -41,6 +42,7 @@
           <section id="panel-look" role="tabpanel" data-panel="look" aria-labelledby="tab-look" hidden>
             <label id="follow-host-row"><input id="follow-host" type="checkbox" /> <span id="follow-host-label"></span></label>
             <p id="look-source" class="muted"></p>
+            <p id="look-note" class="muted" hidden></p>
             <dl id="look-summary"></dl>
             <div class="look-actions">
               <button id="open-studio" type="button" disabled></button>
@@ -48,7 +50,7 @@
             </div>
             <input id="pet-search" type="search" autocomplete="off" />
             <div id="pet-list"></div>
-            <p id="look-storage" class="muted" hidden></p>
+            <p id="look-storage" class="muted" role="status" aria-live="polite" hidden></p>
           </section>
           <section id="panel-about" role="tabpanel" data-panel="about" aria-labelledby="tab-about" hidden>
             <div id="lang-row">
