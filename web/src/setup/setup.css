@@ -27,6 +27,14 @@
   margin-right: var(--space-1);
 }
 
+.bridge-status {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+
 .language-links {
   display: flex;
   flex-wrap: wrap;
@@ -264,9 +272,8 @@ pre {
   display: grid;
   grid-template-columns: minmax(96px, auto) 1fr;
   gap: var(--space-3);
-  align-items: baseline;
-  min-height: 32px;
-  padding: var(--space-1) 0;
+  align-items: center;
+  min-height: var(--row-height);
   border-bottom: 1px solid var(--line);
 }
 

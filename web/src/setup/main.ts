@@ -1,8 +1,30 @@
 import "./setup.css";
-import { isLang } from "../../../src/i18n.js";
+import { isLang, setupCopy } from "../../../src/i18n.js";
 import { t as webT } from "../i18n.js";
 
 const lang = isLang(document.documentElement.lang) ? document.documentElement.lang : "en";
+
+/** Copies the already-rendered URL/command text; never builds or logs a token. */
+function wireCopyButtons(): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-copy-target]")) {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.copyTarget;
+      const target = targetId ? document.getElementById(targetId) : null;
+      const text = target?.textContent?.trim();
+      if (!text || !navigator.clipboard) return;
+      navigator.clipboard.writeText(text).then(
+        () => {
+          button.textContent = setupCopy[lang].copied;
+        },
+        () => {
+          // Keep the text selectable and leave the label unchanged on failure.
+        },
+      );
+    });
+  }
+}
+wireCopyButtons();
+
 const root = document.querySelector<HTMLElement>("#look-app");
 if (root) {
   fetch("/api/setup/look")
