@@ -218,10 +218,10 @@ ${localSection}
     <div id="look-app">
       <div class="look-fallback">
         <p>${copy.lookEnableJavaScript}</p>
-        <dl class="look-summary">
+        <dl class="look-fallback-summary">
           <dt>${copy.lookClock}</dt><dd>${appearance.clock.scale}%</dd>
-          <dt>${copy.lookPet}</dt><dd>${appearance.pet.scale}%</dd>
-          <dt>${copy.lookLayout}</dt><dd>${escapeHtml(appearance.layout.mode)} · gap ${appearance.layout.gap}</dd>
+          <dt>${copy.lookPetSize}</dt><dd>${appearance.pet.scale}%</dd>
+          <dt>${copy.lookLayout}</dt><dd>${escapeHtml(appearance.layout.mode)} · ${appearance.layout.gap}</dd>
         </dl>
         <button type="button" class="button" disabled>${copy.lookOpenStudio}</button>
       </div>

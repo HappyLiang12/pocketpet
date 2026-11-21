@@ -42,14 +42,19 @@ describe("setupPageHtml", () => {
     expect(html).not.toContain("http://evil");
   });
 
-  it("renders the no-JS fallback with QR, URLs, look values and system info", () => {
+  it("renders the no-JS fallback with QR, URLs, aligned look values and system info", () => {
     const html = setupPageHtml(base);
     expect(html).toContain("<svg");
     expect(html).toContain("?token=tok");
     expect(html).toContain("loopback");
+    expect(html).toContain('class="look-fallback-summary"');
     expect(html).toContain("Clock");
-    expect(html).toContain("Pet");
+    expect(html).toContain("Pet size");
+    expect(html).toContain("stack · 16");
     expect(html).toContain("Bridge version");
+    // The hydrated app owns the look-summary markup; the shell only has the
+    // static fallback summary.
+    expect(html).not.toContain('class="look-summary"');
   });
 
   it("hides copy controls without JavaScript and keeps URLs and commands selectable", () => {
@@ -79,12 +84,23 @@ describe("setupPageHtml", () => {
     expect(usbOnly).toContain("adb reverse tcp:7788 tcp:7788");
   });
 
-  it("renders disabled Open Studio and a JavaScript note while the Look editor is absent", () => {
+  it("renders the disabled Open Studio and a JavaScript note without the hydrated Look app", () => {
     const html = setupPageHtml(base);
     expect(html).toMatch(/<button[^>]*type="button"[^>]*disabled[^>]*>Open Studio<\/button>/);
-    expect(html).toContain("JavaScript");
+    expect(html).toContain("Enable JavaScript");
+    expect(html).not.toContain("not available in this build");
     expect(html).toContain("100%");
-    expect(html).toContain("stack · gap 16");
+    // The interactive summary, preview and picker appear only after hydration.
+    expect(html).not.toContain('class="look-summary"');
+    expect(html).not.toContain('class="look-frames"');
+    expect(html).not.toContain("look-pets");
+  });
+
+  it("keeps the System card scope and login service status", () => {
+    const html = setupPageHtml({ ...base, serviceRunning: false });
+    expect(html).toContain('<div class="system-row"><dt>Scope</dt><dd>loopback-only</dd></div>');
+    expect(html).toContain('<div class="system-row"><dt>Login service</dt><dd><span class="status-dot status-warning" aria-hidden="true"></span>Not running</dd></div>');
+    expect(html).not.toMatch(/\bMac\b/);
   });
 
   it("renders copy targets for URLs, commands and diagnostics without a token in diagnostics", () => {
