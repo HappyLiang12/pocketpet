@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, request, test } from "@playwright/test";
 import { DEFAULT_APPEARANCE } from "../src/appearance.js";
 
 // The project default locale is zh-TW; these assertions use the English copy,
@@ -188,5 +188,21 @@ test.describe("setup look", () => {
     await expect(page.locator("#look-app")).not.toContainText("Something went wrong");
     await page.getByRole("button", { name: "Retry" }).click();
     await expect(page.locator("#look-app .look-summary")).toBeVisible();
+  });
+
+  // These tests mutate the shared host state. Restore the seeded defaults with
+  // the same setup API contract even when a test fails, so later spec files
+  // (phone.spec.ts expects local:testpet) do not inherit the change.
+  test.afterAll(async () => {
+    const api = await request.newContext({ baseURL: SETUP_ORIGIN });
+    try {
+      const response = await api.put("/api/setup/look", {
+        headers: SETUP_HEADERS,
+        data: { appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" },
+      });
+      expect(response.ok(), `setup look cleanup failed: HTTP ${response.status()}`).toBe(true);
+    } finally {
+      await api.dispose();
+    }
   });
 });
