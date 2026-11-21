@@ -40,6 +40,24 @@ describe("dictionary", () => {
     }
   });
 
+  it("has the bottom-sheet and About keys in every language", () => {
+    for (const key of ["sheet.live", "sheet.look", "sheet.about", "live.editLook", "about.language", "about.computer"] as const) {
+      // `t` falls back to the key itself, so assert dictionary membership too.
+      for (const lang of LANGS) {
+        expect(Object.prototype.hasOwnProperty.call(STRINGS[lang], key), `${lang} ${key}`).toBe(true);
+        expect(t(lang, key)).not.toBe(key);
+      }
+    }
+  });
+
+  it("does not mention a Mac-only setup page", () => {
+    for (const lang of LANGS) {
+      expect(t(lang, "trouble.setupTitle")).not.toContain("Mac");
+      expect(t(lang, "trouble.setupTitle")).not.toContain("Mac-only");
+      expect(t(lang, "trouble.setupTitle")).not.toContain("只限 Mac");
+    }
+  });
+
   it("localizes every wake status with the existing Traditional Chinese copy", () => {
     expect({
       active: t("zh-Hant", "wake.active"),

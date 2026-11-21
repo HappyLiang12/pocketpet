@@ -4,9 +4,19 @@ import { deflateSync } from "node:zlib";
 
 const home = process.env.POCKETPET_HOME ?? ".tmp-e2e";
 mkdirSync(home, { recursive: true });
-writeFileSync(join(home, "config.json"), JSON.stringify({ token: "e2e-token-0123456789", port: 7799, activePet: "local:testpet", sleepAfterMinutes: 10, quietHours: null }, null, 2));
-// A fresh cache entry keeps /api/pets fully offline during E2E. The gallery is
-// larger than the drawer window so the cap/filter test is meaningful.
+const appearance = {
+  v: 1,
+  layout: { mode: "stack", gap: 16 },
+  stage: { padding: 20 },
+  clock: { x: 50, y: 36, scale: 100, format: "24h" },
+  pet: { x: 50, y: 62, scale: 100 },
+  theme: "system",
+  motion: "system",
+  sessions: { density: "comfortable", maxVisible: 4, showProject: true, showTool: true, showElapsed: true },
+};
+writeFileSync(join(home, "config.json"), JSON.stringify({ token: "e2e-token-0123456789", port: 7799, activePet: "local:testpet", sleepAfterMinutes: 10, quietHours: null, appearance }, null, 2));
+// A fresh cache entry keeps /api/pets fully offline during E2E. The fixture
+// gallery is larger than the picker window so the cap/filter test is meaningful.
 mkdirSync(join(home, "cache", "petdex"), { recursive: true });
 const gallery = Array.from({ length: 60 }, (_, index) => ({
   slug: `gallery-${String(index + 1).padStart(2, "0")}`,
