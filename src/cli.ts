@@ -9,6 +9,8 @@ import qrcode from "qrcode-terminal";
 import { configPath, ensureConfig, pocketpetHome, loadConfig, type Config } from "./config.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
+import { installQoderHooks, qoderHookEventStatus, qoderSettingsPaths } from "./adapters/qoderInstall.js";
+import { mapQoderHook } from "./adapters/qoderHook.js";
 import { doctorChecks } from "./doctor.js";
 import { pairingCopy, pickLanguage } from "./i18n.js";
 import { askYesNo, localHostname, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
@@ -90,12 +92,19 @@ function describeError(error: unknown): string {
   return error.message;
 }
 
+/** Agent name to hook mapper. Unknown agents are ignored so the hook exits 0. */
+const HOOK_MAPPERS: Record<string, (input: unknown) => ReturnType<typeof mapClaudeHook>> = {
+  claude: mapClaudeHook,
+  qoder: mapQoderHook,
+};
+
 /**
- * Hook hot path: reads one Claude hook payload from stdin, maps it and posts it
+ * Hook hot path: reads one agent hook payload from stdin, maps it and posts it
  * to the loopback bridge. Failures are logged and swallowed; this never throws.
  */
 export async function runHook(agent: string): Promise<void> {
-  if (agent !== "claude") return;
+  const mapper = HOOK_MAPPERS[agent];
+  if (!mapper) return;
   const home = pocketpetHome();
   try {
     const raw = await readStdin();
@@ -108,7 +117,7 @@ export async function runHook(agent: string): Promise<void> {
       logHookError(home, "invalid hook input JSON");
       return;
     }
-    const event = mapClaudeHook(payload);
+    const event = mapper(payload);
     if (!event) return;
     let config: Config;
     try {
@@ -161,6 +170,54 @@ export function hasPocketPetHooks(settingsPath: string): boolean {
   });
 }
 
+/** Qoder roots that already exist on this machine; a missing root is never created. */
+function existingQoderSettingsPaths(): string[] {
+  return qoderSettingsPaths().filter((settingsPath) => existsSync(dirname(settingsPath)));
+}
+
+function hasQoderHooks(settingsPath: string): boolean {
+  const status = qoderHookEventStatus(settingsPath);
+  return status !== null && status.missing.length === 0;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * Shell-safe command for Qoder's Settings → Hooks. A macOS GUI app may not
+ * inherit the shell PATH, so a compiled CLI (dist/cli.js) is invoked through
+ * the absolute Node binary. A TypeScript entry point (tsx) falls back to the
+ * linked `pocketpet` command; production installs use dist/cli.js.
+ */
+export function qoderHookCommand(cliPath = fileURLToPath(import.meta.url), nodePath = process.execPath): string {
+  if (!cliPath.endsWith(".js")) return "pocketpet hook qoder";
+  return `${shellQuote(nodePath)} ${shellQuote(cliPath)} hook qoder`;
+}
+
+/**
+ * Installs Qoder hooks into every existing root without prompting. Used by
+ * `pocketpet init`; absent roots are reported, never created.
+ */
+function installQoderHooksForInit(): void {
+  const roots = existingQoderSettingsPaths();
+  if (roots.length === 0) {
+    console.log("Qoder not detected (no ~/.qoder or ~/.qoder-cn); skipping Qoder hooks.");
+    return;
+  }
+  const command = qoderHookCommand();
+  for (const settingsPath of roots) {
+    const root = dirname(settingsPath);
+    try {
+      const result = installQoderHooks(settingsPath, command);
+      console.log(`Qoder hooks (${root}) added: ${result.added.join(", ") || "none"}`);
+      console.log(`Qoder hooks (${root}) already present: ${result.already.join(", ") || "none"}`);
+    } catch {
+      console.error(`Qoder hooks (${root}): could not update settings; continuing.`);
+    }
+  }
+}
+
 /**
  * Installs Claude hooks only with explicit consent. Non-TTY callers are never
  * prompted, and failures are reported generically because the settings JSON
@@ -193,6 +250,46 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
     console.log(`Claude Code hooks added: ${result.added.join(", ") || "none"}`);
   } catch {
     console.error("Claude Code hooks: could not update settings; continuing without hooks.");
+  }
+}
+
+/**
+ * Installs Qoder hooks only into existing roots, with the same consent rules as
+ * Claude. A missing root is skipped silently; failures never block the bridge.
+ */
+async function setupQoderHooks(options: { yes: boolean; noHooks: boolean }): Promise<void> {
+  const roots = existingQoderSettingsPaths();
+  if (roots.length === 0) return;
+  if (options.noHooks) {
+    console.log("Qoder hooks: skipped (--no-hooks)");
+    return;
+  }
+  const pending = roots.filter((settingsPath) => !hasQoderHooks(settingsPath));
+  if (pending.length === 0) {
+    console.log("Qoder hooks: already installed");
+    return;
+  }
+  const tty = Boolean(process.stdin.isTTY);
+  let install = false;
+  if (options.yes) install = true;
+  else if (tty) install = await askYesNo("Install Qoder hooks?", true, tty);
+  else {
+    console.log("Qoder hooks: skipped (not a TTY; pass --yes or run `pocketpet init`)");
+    return;
+  }
+  if (!install) {
+    console.log("Qoder hooks: skipped");
+    return;
+  }
+  const command = qoderHookCommand();
+  for (const settingsPath of pending) {
+    const root = dirname(settingsPath);
+    try {
+      const result = installQoderHooks(settingsPath, command);
+      console.log(`Qoder hooks added (${root}): ${result.added.join(", ") || "none"}`);
+    } catch {
+      console.error(`Qoder hooks (${root}): could not update settings; continuing without Qoder hooks.`);
+    }
   }
 }
 
@@ -319,6 +416,7 @@ async function runInit(): Promise<number> {
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
+  installQoderHooksForInit();
   console.log("Next: pocketpet run");
   return 0;
 }
@@ -342,6 +440,7 @@ async function runUp(args: string[]): Promise<number> {
   console.log(`Config: ${configPath(home)}`);
 
   await setupClaudeHooks({ yes: options.yes, noHooks: options.noHooks });
+  await setupQoderHooks({ yes: options.yes, noHooks: options.noHooks });
   const tty = Boolean(process.stdin.isTTY);
 
   if (await bridgeHealthy(config.port)) {
@@ -493,7 +592,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.error(`pocketpet: ${command ?? "run"} failed`);
     return 1;
   }
-  console.error("usage: pocketpet init | up | run | service <install|uninstall|status> | doctor | hook claude");
+  console.error("usage: pocketpet init | up | run | service <install|uninstall|status> | doctor | hook claude|qoder");
   return 2;
 }
 

@@ -1,6 +1,6 @@
 # Qoder event research (gate G1)
 
-Status: research complete. **Decision: `hook`.** No Qoder adapter is implemented in M1; this document is the input for M3.
+Status: research complete; **Decision: `hook`**. The adapter is implemented in M3 (`src/adapters/qoderHook.ts`, `src/adapters/qoderInstall.ts`, `pocketpet hook qoder`). The blocking unknown — whether Qoder desktop 0.5.17 fires a hand-written user-level hook — is still to be verified with the real app; see "M3 implementation status" below.
 
 - Observation date: 2026-11-21 (local time, UTC+08:00).
 - Qoder desktop observed: **0.5.17** (`/Applications/Qoder.app/Contents/Info.plist` `CFBundleShortVersionString`, and `~/.qoder/.qoder-app-status.json` `"version": "0.5.17"`).
@@ -128,7 +128,21 @@ Confidence: **high** for the mechanism and configuration shape; **medium-high** 
 
 Add a Qoder hook adapter that mirrors the existing Claude adapter: `pocketpet init` optionally writes `pocketpet hook qoder` command hooks into `~/.qoder/settings.json` (and `~/.qoder-cn/settings.json` when that root exists), preserving every unrelated key and every foreign hook entry so Petdex/Clawd hooks continue to work; `pocketpet doctor` gains a `qoder hooks` check that is PASS when the PocketPet command is present for the required events, WARN when Qoder is absent, and never rewrites the file; `pocketpet hook qoder` reads the bounded stdin payload with the existing `readStdin` helper, maps it to the shared `NormalizedEvent` with `agent: "qoder"`, and POSTs it to the loopback bridge, swallowing all errors and printing nothing. The mapper reads only `session_id`, `cwd`, `hook_event_name`, `tool_name`, and `notification_type`; it must never forward `tool_input`, `tool_response`, `prompt`, `error`, `last_assistant_message`, or `transcript_path`. Event mapping: `SessionStart` → `started`; `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStop` → `working`; `PermissionRequest` and `Notification` with `notification_type` `permission_prompt` or `elicitation_dialog` → `waiting`; `PostToolUseFailure` and `StopFailure` → `failed`; `Stop` → `done`; `SessionEnd` → `idle` (removes the session). Ignore `Notification` types `auth_success`, `elicitation_response`, and `elicitation_complete`, and decide explicitly whether `SubagentStart`/`SubagentStop` are separate sessions or folded into the parent. Write `timeout: 2` seconds and a resolved absolute hook command path (not bare `pocketpet`), because a macOS GUI app may not inherit the shell `PATH`; use `async: true` if testing shows it does not delay or drop events. Do not write `hooksConfig`; Petdex's merged implementation states that Qoder already defaults `hooksConfig.enabled` to true and that writing it could clobber a deliberate opt-out.
 
-### Mapping table for M3
+### M3 implementation status
+
+Adapter implemented 2026-11-21 on branch `feat/qoder-adapter`:
+
+- `src/adapters/qoderHook.ts` maps the hook payload to `NormalizedEvent` with `agent: "qoder"`. It reads only `session_id`, `cwd`, `hook_event_name`, `tool_name`, and `notification_type`; tool inputs/outputs, messages, errors, prompts, and transcript paths are never copied.
+- `src/adapters/qoderInstall.ts` writes the twelve events listed below into `hooks.<EventName>` as `{ hooks: [{ type: "command", command, timeout: 2 }] }`, preserving unrelated keys and foreign hooks and never writing `hooksConfig`. Installation is atomic (same-directory temp + rename) and idempotent by exact command string.
+- `pocketpet hook qoder` uses the same bounded stdin, 500 ms bridge POST, config loading, logging, and always-exit-0 behavior as the Claude hook.
+- `pocketpet init` installs into every existing Qoder root and reports added/already per root; `pocketpet up` prompts `Install Qoder hooks? [Y/n]` only when a root exists; `pocketpet doctor` reports `qoder hooks` as WARN (not detected), PASS (all events wired), or FAIL (missing events/roots).
+- Installed events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Notification`, `SubagentStart`, `SubagentStop`, `Stop`, `StopFailure`, `SessionEnd`.
+- Subagent events fold into the parent `session_id`; they do not create a separate visible session.
+- The compiled CLI writes an absolute `<node> <dist/cli.js> hook qoder` command because the macOS GUI may not inherit the shell `PATH`; a TypeScript (tsx) entry point falls back to the linked `pocketpet hook qoder`.
+
+**Verification gate (still open):** Qoder desktop 0.5.17 has not been observed executing a hand-written user-level hook, and no PocketPet payload has been observed from a real Qoder task. The mapping table below is therefore implemented but provisional. Remove this gate only after installing hooks with consent into a real Qoder root, running a Qoder task, and confirming the phone pet reacts (see `docs/acceptance/m3-qoder-manual.md`, currently NOT RUN).
+
+## Mapping table for M3
 
 | Qoder event | PocketPet phase | Notes |
 | --- | --- | --- |

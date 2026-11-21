@@ -130,7 +130,7 @@ Token 輪替／撤銷**未實作**：重新印 QR 不會撤銷舊連結，舊 co
 | Codex CLI | `notify`／hook 程式 | 可行，需對版本實測 | 與 Petdex／Clawd 相同思路 |
 | OpenCode | plugin 事件 | 可行，需寫 plugin | 事件較細，需映射 |
 | Pi | hook 介面 | Clawd 已支援，需對照驗證 | 研究閘 G5 |
-| Qoder | 內建桌面寵物／Petdex 整合 | **研究閘 G1：事件機制未確認** | 可能要 hook、plugin 或 log tail |
+| Qoder | hooks（與 Claude Code 相同 schema；十二個事件） | 已實作（M3，2026-11-21） | 絕對 `<node> <cli.js>` 命令路徑；真 Qoder 桌面 app 執行 hand-written hook 仍待驗證（NOT RUN） |
 
 與其他寵物 app（Petdex Desktop、Clawd on Desk）並存：installer 採用 chaining，不覆寫別人的 hook；`pocketpet doctor` 檢查每隻 agent 的 hook 是否仍指向正確位置，被覆寫時明確提示。Clawd 為 AGPL-3.0，只作架構參考，不複製其程式碼。
 
@@ -232,7 +232,7 @@ pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local
 |---|---|
 | M1 | Bridge ＋ Claude Code adapter ＋ 手機頁（兩姿態）＋ 本機／Petdex 寵物 ＋ QR ＋ doctor；Qoder 機制 spike（G1） |
 | M2 | Codex CLI、OpenCode、Pi adapters |
-| M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋（可選）tunnel 評估 |
+| M3 | Qoder adapter（已實作；真 Qoder app 驗證待做）＋ 上傳 UI ＋（可選）tunnel 評估 |
 | M4 | 長亮指引／夜間調暗／真機驗收 |
 
 ### M1 實際交付與延後項目
@@ -248,7 +248,7 @@ M1 只交付 bridge、Claude Code adapter、手機頁（摺合／展開）、本
 - `init` 的預設寵物選擇：延後至 M2。
 - WebSocket 心跳：延後至 M2。
 
-其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與（可選）tunnel 評估仍屬 M3。USB fallback 引導（`adb reverse`＋帶 token 的 loopback URL）已隨 M1 onboarding 交付，不再列於 M3。
+其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；寵物上傳 UI 與（可選）tunnel 評估仍屬 M3。Qoder adapter 已於 M3 實作（見「Agent 接入」表），但 Qoder 桌面 0.5.17 執行手寫 user-level hook 的端到端驗證仍待完成。USB fallback 引導（`adb reverse`＋帶 token 的 loopback URL）已隨 M1 onboarding 交付，不再列於 M3。
 
 ## 決策更新（2026-11-21 真機測試）
 
@@ -260,7 +260,7 @@ M1 只交付 bridge、Claude Code adapter、手機頁（摺合／展開）、本
 
 | 閘 | 風險 | 驗證方法 |
 |---|---|---|
-| G1 | Qoder 事件機制未確認（可能無公開 hook） | 查 Qoder 文檔、觀察其桌面寵物如何取得事件；必要時 log tail；未確認前不當可交付 |
+| G1 | Qoder desktop 0.5.17 未證實會執行手寫 user-level hook；adapter 已實作但 mapping 暫定 | 用同意安裝 hook 後跑真實 Qoder task，確認手機寵物反應；見 `docs/acceptance/m3-qoder-manual.md` |
 | G2 | vivo 帳篷模式下瀏覽器螢幕行為與 AOD 不同 | 真機實測：頁面能否長開、摺合時 viewport 尺寸 |
 | G3 | 純 HTTP 無 Wake Lock | 真機實測 iOS／Android；以系統設定指引作 fallback |
 | G4 | Hooks 與 Petdex Desktop／Clawd 互相覆寫 | 同時安裝實測，doctor 驗證 |
