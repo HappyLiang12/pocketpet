@@ -14,7 +14,7 @@ Rules:
 1. `npm install && npm run build` succeeds. `npm link` has been run, so `fold-pet` resolves to the built `dist/cli.js` in the shell used for items 1, 2, 11, and 12 (`fold-pet service install` refuses a `.ts` entry point).
 2. Claude Code is installed and its settings file is writable (`~/.claude/settings.json` by default).
 3. A pet is available: either `npx petdex install boba` has succeeded, or a local pet exists in `~/.fold-pet/pets`.
-4. The phone and Mac are on the same WiFi for items 3–6, 8–9, 11, and 13; item 7 uses USB + `adb reverse` (macOS Monterey+ has no Bluetooth PAN); items 1, 2, 10, and 12 are local to the Mac.
+4. The phone and Mac are on the same WiFi for items 3–6, 8–9, 11, and 13; item 7 uses USB + `adb reverse` (macOS Monterey+ has no Bluetooth PAN); items 1, 2, and 10 are local to the Mac. Item 12 is run from the Mac, but its post-login reconnect step (step 5) needs the phone on the same WiFi.
 5. The phone is a vivo X Fold 5 with Chrome for items 3–5, 7–8, and 11 (Android); an iPhone with Safari is also available for items 6 and 11 (iOS).
 6. For item 11 (and its optional `.local` sub-check, item 13) the phone **camera** scans the QR; `adb reverse` must not be used as a substitute. The `.local` sub-check is recorded but does not gate M1.
 7. Item 11 exercises the first-run prompts. If you reuse an existing `~/.fold-pet`, record which steps reported "already installed" instead of skipping the item.
@@ -311,8 +311,9 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 3. Confirm the output shows `Config: <path>`, a full-size terminal QR, all LAN URLs, the `.local` URL (if any), and the three Traditional Chinese steps. Confirm `http://127.0.0.1:<port>/setup` opened in the Mac browser (or was skipped with `--no-open`).
 4. On the vivo X Fold 5, open the **camera** app and scan the QR code. Open the detected link. Do not use `adb reverse` or a copied URL for this step.
 5. After the page loads, inspect the address bar. Open the gear drawer and record the exact add-to-home hint, then dismiss it and reload.
-6. Repeat steps 4–5 with the iPhone camera and Safari.
-7. Redact every `?token=...` value before pasting the `fold-pet up` output. Crop the QR and URLs out of any Mac `/setup` screenshot.
+6. Add the page to the home screen (`加到主畫面`), close the browser tab, then open FoldPet from the new icon and confirm it loads with `已連線` without scanning the QR again. If a rescan is required, record that as the observed result.
+7. Repeat steps 4–6 with the iPhone camera and Safari.
+8. Redact every `?token=...` value before pasting the `fold-pet up` output. Crop the QR and URLs out of any Mac `/setup` screenshot.
 
 **PASS criteria**
 
@@ -320,10 +321,13 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 - Both phones load the page through a camera scan: the clock, pet, and `已連線` appear with no phone-side configuration.
 - After load the address bar shows the path only (`/...`), with no `?token=`; a reload still shows `已連線` and the pet loads (the HttpOnly cookie survives).
 - The drawer shows the one-time add-to-home hint exactly once (platform-appropriate text), and after dismissing it a reload keeps it hidden.
+- The page added to the home screen opens from its icon on Android and iOS and shows `已連線` without a rescan; if a rescan is required, that is recorded as the observed result (a finding, not a reason to relax this checklist).
 - Android and iOS results are recorded separately as PASS/FAIL with the observed behavior. A failure is a finding, not a reason to relax this checklist.
 - No step used `adb reverse`; no token appears in any pasted output or screenshot.
 
-**Producer of evidence:** tester, `fold-pet up` stdout with tokens redacted, a Mac `/setup` screenshot with the QR/URLs cropped, and phone screenshots of the loaded page, address bar, and drawer hint for both Android and iOS.
+**Note (stale token when a service already runs):** if a bridge is already listening on the configured port from a different `FOLDPET_HOME`, `fold-pet up` treats it as running and can print pairing details from the other config, so the printed token is stale and the scan fails. Either uninstall that service first, or use `--no-service` with a fresh `FOLDPET_HOME` and a distinct `FOLDPET_PORT` so the config and port belong together.
+
+**Producer of evidence:** tester, `fold-pet up` stdout with tokens redacted, a Mac `/setup` screenshot with the QR/URLs cropped, and phone screenshots of the loaded page, address bar, drawer hint, and home-screen launch for both Android and iOS.
 
 **Result:** NOT RUN
 
@@ -332,8 +336,8 @@ macOS Monterey and later removed Bluetooth PAN, so Bluetooth tethering is not a 
 ```text
 (paste redacted `fold-pet up` stdout; list the prompt answers and whether /setup opened)
 
-(Android: page screenshot, address bar after load, drawer hint text; result)
-(iOS: page screenshot, address bar after load, drawer hint text; result)
+(Android: page screenshot, address bar after load, drawer hint text; home-screen icon open with/without rescan; result)
+(iOS: page screenshot, address bar after load, drawer hint text; home-screen icon open with/without rescan; result)
 ```
 
 ### 12. launchd login service lifecycle

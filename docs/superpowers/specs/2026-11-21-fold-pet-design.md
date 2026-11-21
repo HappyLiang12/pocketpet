@@ -104,7 +104,7 @@ Adapter → bridge（只接受 loopback 來源）：
 |---|---|---|---|---|
 | `/api/event` | POST | adapters | 接收正規化事件 | 只限 loopback |
 | `/api/state` | GET | phone | 初始 snapshot（sessions ＋目前寵物狀態） | Bearer token |
-| `/ws` | WS | phone | 狀態推送＋心跳 | token（query，連上後轉 header） |
+| `/ws` | WS | phone | 狀態推送＋心跳 | cookie（HttpOnly；頁面載入時設定） |
 | `/` | GET | phone | 顯示頁 | token（一次性 bootstrap query，換 HttpOnly cookie，載入後由地址欄移除） |
 | `/api/pets` | GET | phone | 可用寵物清單（本機＋快取 manifest） | Bearer token |
 | `/api/pets` | POST | phone | 上傳寵物（zip／folder） | Bearer token |
@@ -112,7 +112,7 @@ Adapter → bridge（只接受 loopback 來源）：
 | `/assets/pets/*` | GET | phone | spritesheet／pet.json | Bearer token |
 | `/health` | GET | doctor | 版本、adapters 狀態、監聽地址 | 只限 loopback |
 
-Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上傳設大小上限並拒絕路徑穿越。
+Token 輪替／撤銷**未實作**：重新印 QR 不會撤銷舊連結，舊 cookie／URL 繼續有效。要作廢現有 token，需手動編輯 `config.json` 的 `token` 再重啟 bridge（M3 才提供 CLI）。上傳設大小上限並拒絕路徑穿越。
 
 ## 寵物資產管道
 
@@ -171,7 +171,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 
 ### 手機流程與 token
 
-- 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: foldpet_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` 設持久 cookie（瀏覽器重開毋須重掃；token 輪替前有效）。
+- 手機無需任何設定：相機掃 QR → 瀏覽器開 `/?token=...` → server 以 `Set-Cookie: foldpet_token=...; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000` 設持久 cookie（瀏覽器重開毋須重掃；token 未手動更改前一直有效）。
 - 頁面載入後以 `history.replaceState` 移除 `?token=`，地址欄與其後書籤只剩 `/`；API、WebSocket 與重新載入都靠 HttpOnly cookie，token 不再出現在畫面或瀏覽歷史。
 - 齒輪抽屜顯示一次性「加到主畫面」提示（iOS：分享 → 加入主畫面；Android：選單 → 加到主畫面；其他：瀏覽器選單）。已是 standalone 或使用者按「知道了」後不再顯示（`localStorage.foldpet.installHintDismissed`）。
 
@@ -198,7 +198,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 ## 保安與私隱
 
 - 事件端點只接受 loopback；不監聽外網。
-- 手機端所有 API／WS 需 token；token 可 rotate、可撤銷。
+- 手機端所有 API／WS 需 token（頁面換成 HttpOnly cookie）。token 輪替／撤銷未實作：重印 QR 不會令舊連結失效，只能手動改 `config.json` 的 `token` 再重啟 bridge（撤銷 CLI 屬 M3）。
 - 事件只含 agent 名、session id、專案資料夾名、工具名、階段、時間戳；不含程式碼、prompt、輸出。
 - 上傳限制大小與格式；拒絕路徑穿越；manifest 代理只允許固定來源。
 - 無遙測、無外部請求（除 Petdex manifest 代理與寵物圖片下載）。
@@ -212,7 +212,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 | 多個 agent 同時 waiting | chips 閃爍標示等待者；寵物保持 waiting |
 | 寵物檔壞／缺失 | 內建 fallback 精靈＋明確錯誤訊息 |
 | Hooks 被其他 app 覆寫 | `fold-pet doctor` 偵測並提示修復；installer 用 chaining |
-| Token 洩漏／撤銷 | 重新印 QR，舊連結即時失效 |
+| Token 洩漏 | 未實作輪替／撤銷：重新印 QR 不會令舊連結失效。手動改 `config.json` 的 `token` 並重啟 bridge 以作廢舊連結（CLI 屬 M3） |
 | Agent 崩潰無 Stop 事件 | session TTL 自動清除 |
 | 上傳惡意 zip／路徑穿越 | 拒絕並記錄錯誤 |
 
@@ -230,7 +230,7 @@ fold-pet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]
 |---|---|
 | M1 | Bridge ＋ Claude Code adapter ＋ 手機頁（兩姿態）＋ 本機／Petdex 寵物 ＋ QR ＋ doctor；Qoder 機制 spike（G1） |
 | M2 | Codex CLI、OpenCode、Pi adapters |
-| M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋ USB fallback 引導與（可選）tunnel 評估 |
+| M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋（可選）tunnel 評估 |
 | M4 | 長亮指引／夜間調暗／真機驗收 |
 
 ### M1 實際交付與延後項目
@@ -246,7 +246,7 @@ M1 只交付 bridge、Claude Code adapter、手機頁（摺合／展開）、本
 - `init` 的預設寵物選擇：延後至 M2。
 - WebSocket 心跳：延後至 M2。
 
-其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與 USB fallback 引導／（可選）tunnel 評估仍屬 M3。
+其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與（可選）tunnel 評估仍屬 M3。USB fallback 引導（`adb reverse`＋帶 token 的 loopback URL）已隨 M1 onboarding 交付，不再列於 M3。
 
 ## 決策更新（2026-11-21 真機測試）
 

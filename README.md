@@ -23,7 +23,7 @@ fold-pet up
 2. Asks `Install Claude Code hooks? [Y/n]` when stdin is a terminal. `--yes` installs without asking, `--no-hooks` skips, and a non-TTY run skips with a reminder to run `fold-pet init` later. Existing settings and third-party hooks are preserved.
 3. Asks `Start bridge at login? [y/N]` (default no). Answering yes, or passing `--yes`, installs the `dev.foldpet.bridge` LaunchAgent. Otherwise the bridge runs in the foreground until Ctrl+C; `--no-service` skips the question. If a bridge already answers on the configured port, `up` reprints the pairing details and reopens `/setup`.
 4. Prints every LAN URL plus a full-size terminal QR code (first IPv4 address by default) and the three phone steps.
-5. Opens `http://127.0.0.1:<port>/setup` in the Mac browser: a loopback-only page with the same QR, the URLs, and USB instructions. `--no-open` keeps it closed.
+5. Opens `http://127.0.0.1:<port>/setup` in the Mac browser: a loopback-only page with the **IP** QR, the URLs, and USB instructions. The page always shows the IP QR, so `--qr-host local` only changes the terminal QR. `--no-open` keeps the page closed.
 
 ### On the phone
 
@@ -51,7 +51,7 @@ The service runs `<node> <dist/cli.js> run --service`, which prints only `FoldPe
 
 ### Port
 
-The port lives in `~/.fold-pet/config.json` (default 7788). `FOLDPET_PORT` overrides it only while a **new** config is created: an integer 0–65535 (0 asks the OS for a free port); invalid values fall back to 7788. Existing configs are never rewritten — edit `port` in the config file to change it later.
+The port lives in `~/.fold-pet/config.json` (default 7788). `FOLDPET_PORT` overrides it only while a **new** config is created: an integer 0–65535; invalid values fall back to 7788. Existing configs are never rewritten — edit `port` in the config file to change it later. `FOLDPET_PORT=0` asks the OS for a free port and is for automated tests only: do not persist port 0 in a real config, because the next start gets a different port and previously printed QR codes/URLs stop matching.
 
 ## Always-on screen
 
