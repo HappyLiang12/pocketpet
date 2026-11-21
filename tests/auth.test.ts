@@ -36,7 +36,7 @@ describe("setTokenCookie", () => {
     const headers: Record<string, string> = {};
     const res = { setHeader: (name: string, value: string) => { headers[name] = value; } } as unknown as ServerResponse;
     setTokenCookie(res, "a b");
-    expect(headers["Set-Cookie"]).toBe("foldpet_token=a%20b; HttpOnly; SameSite=Lax; Path=/");
+    expect(headers["Set-Cookie"]).toBe("foldpet_token=a%20b; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000");
   });
 });
 

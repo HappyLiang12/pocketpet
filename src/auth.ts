@@ -31,5 +31,5 @@ export function isAuthorized(req: IncomingMessage, url: URL, token: string): boo
 }
 
 export function setTokenCookie(res: ServerResponse, token: string): void {
-  res.setHeader("Set-Cookie", `foldpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/`);
+  res.setHeader("Set-Cookie", `foldpet_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`);
 }
