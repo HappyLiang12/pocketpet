@@ -22,15 +22,26 @@ function chunk(type, data) {
   crc.writeUInt32BE(crc32(body));
   return Buffer.concat([length, body, crc]);
 }
-function png(width, height) {
+function png(width, height, colorAt = () => [0, 0, 0, 0]) {
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  const row = Buffer.alloc(1 + width * 4);
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  const rowBytes = 1 + width * 4;
+  const raw = Buffer.alloc(rowBytes * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * rowBytes;
+    for (let x = 0; x < width; x++) {
+      const [r, g, b, a] = colorAt(x, y);
+      const offset = rowStart + 1 + x * 4;
+      raw[offset] = r;
+      raw[offset + 1] = g;
+      raw[offset + 2] = b;
+      raw[offset + 3] = a;
+    }
+  }
   return Buffer.concat([signature, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 mkdirSync(join(home, "pets", "testpet"), { recursive: true });
@@ -39,6 +50,16 @@ writeFileSync(join(home, "pets", "testpet", "spritesheet.png"), png(384, 468));
 mkdirSync(join(home, "pets", "testpet2"), { recursive: true });
 writeFileSync(join(home, "pets", "testpet2", "pet.json"), JSON.stringify({ id: "testpet2", displayName: "Test Pet 2", description: "", spritesheetPath: "spritesheet.png" }));
 writeFileSync(join(home, "pets", "testpet2", "spritesheet.png"), png(384, 468));
+// Scaled 8x9 atlas whose every 48x52 cell is a flat opaque color derived from
+// its row/column: R = 40 + 20*row, G = 40 + 20*col, B = 10. A renderer that
+// assumes 192x208 cells would sample the wrong row and show the wrong color.
+mkdirSync(join(home, "pets", "markerpet"), { recursive: true });
+writeFileSync(join(home, "pets", "markerpet", "pet.json"), JSON.stringify({ id: "markerpet", displayName: "Marker Pet", description: "", spritesheetPath: "spritesheet.png" }));
+writeFileSync(join(home, "pets", "markerpet", "spritesheet.png"), png(384, 468, (x, y) => {
+  const row = Math.floor(y / 52);
+  const col = Math.floor(x / 48);
+  return [40 + 20 * row, 40 + 20 * col, 10, 255];
+}));
 mkdirSync(join(home, "pets", "brokenpet"), { recursive: true });
 writeFileSync(join(home, "pets", "brokenpet", "pet.json"), JSON.stringify({ id: "brokenpet", displayName: "Broken Pet", description: "", spritesheetPath: "spritesheet.png" }));
 writeFileSync(join(home, "pets", "brokenpet", "spritesheet.png"), Buffer.from("not a png"));

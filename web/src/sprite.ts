@@ -1,9 +1,8 @@
+import { atlasGeometry, sourceRect, type AtlasGeometry } from "./atlas.js";
+
 export type PetState = "idle" | "running-right" | "running-left" | "waving" | "jumping" | "failed" | "waiting" | "running" | "review";
 
 type StateDef = { row: number; frames: number[] };
-const FRAME_W = 192;
-const FRAME_H = 208;
-const COLUMNS = 8;
 
 function uniform(count: number, duration: number, last: number): number[] {
   return Array.from({ length: count }, (_, index) => (index === count - 1 ? last : duration));
@@ -23,6 +22,7 @@ const STATES: Record<PetState, StateDef> = {
 
 export class PetRenderer {
   private image: HTMLImageElement | null = null;
+  private geometry: AtlasGeometry | null = null;
   private state: PetState = "idle";
   private frame = 0;
   private last = performance.now();
@@ -34,12 +34,16 @@ export class PetRenderer {
   async load(url: string): Promise<void> {
     const generation = ++this.generation;
     this.image = null;
+    this.geometry = null;
     this.frame = 0;
     const image = new Image();
     image.src = url;
     await image.decode();
     if (generation !== this.generation) return;
+    const geometry = atlasGeometry(image.naturalWidth, image.naturalHeight);
+    if (!geometry) throw new Error(`unsupported spritesheet ${image.naturalWidth}x${image.naturalHeight}`);
     this.image = image;
+    this.geometry = geometry;
     this.frame = 0;
   }
 
@@ -73,9 +77,10 @@ export class PetRenderer {
       this.last = now;
     }
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (this.image) {
+    if (this.image && this.geometry) {
+      const rect = sourceRect(this.geometry, def.row, this.frame);
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(this.image, (this.frame % COLUMNS) * FRAME_W, def.row * FRAME_H, FRAME_W, FRAME_H, 0, 0, this.canvas.width, this.canvas.height);
+      ctx.drawImage(this.image, rect.sx, rect.sy, rect.sw, rect.sh, 0, 0, this.canvas.width, this.canvas.height);
       return;
     }
     const bob = Math.sin(now / 500) * (this.state === "idle" ? 3 : 1);
