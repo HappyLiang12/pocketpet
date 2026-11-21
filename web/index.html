@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>FoldPet</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="top">
+        <section id="clock"><div id="time">--:--</div><div id="date"></div></section>
+        <div id="conn" data-state="connecting">連線中</div>
+        <button id="gear" aria-label="設定">⚙</button>
+      </header>
+      <main id="main">
+        <section id="stage"><canvas id="pet" width="192" height="208"></canvas></section>
+        <aside id="sessions"></aside>
+      </main>
+      <footer id="chips"></footer>
+      <aside id="drawer" hidden>
+        <h2>設定</h2>
+        <div id="pet-list"></div>
+        <p id="wake-info">螢幕長亮：未知</p>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
