@@ -1,10 +1,26 @@
 # PocketPet
 
+[![CI](https://github.com/HappyLiang12/pocketpet/actions/workflows/ci.yml/badge.svg)](https://github.com/HappyLiang12/pocketpet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20.6-brightgreen)](package.json)
+
+[English](README.md) | [简体中文](README.zh-Hans.md)
+
 Turn a foldable phone into a desk clock with a live AI-agent pet. The Mac bridge collects coding-agent activity and streams it to a phone web page — no app install, no cloud.
+
+## Features
+
+- Zero-install phone page: scan one QR, add it to the home screen, keep it charging.
+- Folded outer screen shows a clock + pet; unfolding gives a wide stage with per-agent session cards.
+- Live states from Claude Code (M1), with Qoder/Codex/OpenCode/Pi adapters on the roadmap.
+- Petdex pets: gallery search, capped picker, local installs, custom `pet.json` + spritesheet.
+- One-command onboarding (`pocketpet up`), optional launchd login service, USB fallback.
+- English, Traditional Chinese, and Simplified Chinese UI; an in-page debug panel and connection troubleshooting.
+- Local-first: loopback events, per-install token, no telemetry.
 
 ## Requirements
 
-- macOS with Node.js >= 20
+- macOS with Node.js >= 20.6
 - Phone on the same WiFi as the Mac (USB fallback below for different networks)
 - Claude Code for the M1 adapter
 
@@ -88,7 +104,7 @@ PocketPet scans three local roots in order: `~/.pocketpet/pets`, `~/.codex/pets`
 
 ## Status
 
-M1: one-command onboarding (`pocketpet up`), loopback `/setup` pairing page, launchd login service, Claude Code adapter, phone display (folded + wide), pet catalog, QR pairing. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`.
+Current: M1 + onboarding. One-command setup (`pocketpet up`), loopback `/setup` pairing, launchd login service, Claude Code adapter, foldable folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. Codex/OpenCode/Pi adapters, Qoder support, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`.
 
 ## Troubleshooting
 
@@ -100,3 +116,17 @@ M1: one-command onboarding (`pocketpet up`), loopback `/setup` pairing page, lau
 ## Security
 
 Events are accepted only from loopback. The phone API requires the per-install token; the QR carries it once, the browser stores it as an HttpOnly cookie for one year (so a browser restart does not require a rescan), and the page removes `?token=` from the address bar after load. The token still appears in the terminal output and on the loopback-only `/setup` page, and the service log never contains it; avoid sharing screenshots that show the QR, URLs, or setup page. `/setup` is not cached (`Cache-Control: no-store`). No cloud, no telemetry. Events contain agent/session/project/tool names only — never code, prompts, or outputs.
+
+## Credits
+
+- [Petdex](https://petdex.dev) — open-source pet format, gallery, and manifest (MIT). Pet art is owned by its submitters; PocketPet does not bundle pet art and reads locally installed packages.
+- [Clawd on Desk](https://github.com/rullerzhou-afk/clawd-on-desk) — architecture reference only (AGPL-3.0); no code was copied.
+- Qoder, Claude Code, Codex, OpenCode, Pi, and other agent names are trademarks of their respective owners. PocketPet is not affiliated with them.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports go through GitHub Security Advisories; see [SECURITY.md](SECURITY.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

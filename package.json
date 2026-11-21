@@ -1,10 +1,29 @@
 {
   "name": "pocketpet",
   "version": "0.1.0",
+  "description": "Desk clock + AI coding-agent pet for foldable phones",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HappyLiang12/pocketpet.git"
+  },
+  "homepage": "https://github.com/HappyLiang12/pocketpet#readme",
+  "bugs": {
+    "url": "https://github.com/HappyLiang12/pocketpet/issues"
+  },
+  "keywords": [
+    "desktop-pet",
+    "ai-agents",
+    "foldable",
+    "macos",
+    "claude-code",
+    "codex",
+    "petdex"
+  ],
   "bin": { "pocketpet": "dist/cli.js" },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=20.6" },
   "scripts": {
     "build:web": "vite build --config web/vite.config.ts",
     "build:bridge": "tsc -p tsconfig.json",
