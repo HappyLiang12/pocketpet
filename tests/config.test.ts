@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, w
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { configPath, ensureConfig, loadConfig, saveConfig } from "../src/config.js";
 
 let home = "";
@@ -24,6 +25,7 @@ describe("config store", () => {
     expect(config.token.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(7788);
     expect(config.activePet).toBeNull();
+    expect(config.appearance).toEqual(DEFAULT_APPEARANCE);
     expect(JSON.parse(readFileSync(configPath(home), "utf8")).token).toBe(config.token);
     if (process.platform !== "win32") {
       for (const dir of [home, join(home, "pets"), join(home, "cache", "petdex"), join(home, "logs")]) {
@@ -55,6 +57,26 @@ describe("config store", () => {
     const config = ensureConfig(home);
     saveConfig(home, { ...config, activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
     expect(loadConfig(home)).toMatchObject({ activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
+  });
+
+  it("defaults appearance for old configs", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    writeFileSync(configPath(home), JSON.stringify({
+      token: "legacy-token-0123456789",
+      port: 7788,
+      activePet: null,
+      sleepAfterMinutes: 10,
+      quietHours: null,
+    }));
+    expect(loadConfig(home).appearance).toEqual(DEFAULT_APPEARANCE);
+  });
+
+  it("round-trips a normalized appearance", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const config = ensureConfig(home);
+    const appearance = normalizeAppearance({ ...DEFAULT_APPEARANCE, theme: "light", clock: { scale: 140 } });
+    saveConfig(home, { ...config, appearance });
+    expect(loadConfig(home).appearance).toEqual(appearance);
   });
 
   it("rejects malformed config", () => {
