@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 import { appendFileSync, existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { foldPetHome, loadConfig, type Config } from "./config.js";
+import qrcode from "qrcode-terminal";
+import { configPath, ensureConfig, foldPetHome, loadConfig, type Config } from "./config.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
+import { installClaudeHooks } from "./adapters/claudeInstall.js";
+import { doctorChecks } from "./doctor.js";
+import { urlsForPort } from "./net.js";
+import { startBridge } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
 const MAX_LOG_BYTES = 1_000_000;
@@ -119,16 +125,59 @@ export async function runHook(agent: string): Promise<void> {
   }
 }
 
+async function runInit(): Promise<number> {
+  const home = foldPetHome();
+  ensureConfig(home);
+  const settingsPath = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
+  const result = installClaudeHooks(settingsPath);
+  console.log(`Config: ${configPath(home)}`);
+  console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
+  console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
+  console.log("Next: fold-pet run");
+  return 0;
+}
+
+async function runServer(): Promise<number> {
+  const home = foldPetHome();
+  let config: Config;
+  try {
+    config = loadConfig(home);
+  } catch {
+    console.error("No config found. Run `fold-pet init` first.");
+    return 1;
+  }
+  const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "web");
+  const bridge = await startBridge({ home, config, webDist });
+  const urls = urlsForPort(bridge.port, config.token);
+  if (urls.length === 0) console.log("No LAN IPv4 address found. Join WiFi or enable Bluetooth tethering.");
+  for (const url of urls) console.log(url);
+  if (urls[0]) qrcode.generate(urls[0], { small: true });
+  console.log("Scan the QR on your phone. Ctrl+C to stop.");
+  await new Promise<void>((resolveStop) => {
+    process.once("SIGINT", () => {
+      bridge.close().then(() => resolveStop(), () => resolveStop());
+    });
+  });
+  return 0;
+}
+
+async function runDoctor(): Promise<number> {
+  const checks = await doctorChecks({ home: foldPetHome() });
+  for (const check of checks) console.log(`${check.status} ${check.name}: ${check.detail}`);
+  return checks.some((check) => check.status === "FAIL") ? 1 : 0;
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const [command, arg] = argv;
-  switch (command) {
-    case "hook":
-      await runHook(arg ?? "");
-      return 0;
-    default:
-      console.error("usage: fold-pet init | run | doctor | hook claude");
-      return 2;
+  if (command === "init") return runInit();
+  if (command === "run" || command === undefined) return runServer();
+  if (command === "doctor") return runDoctor();
+  if (command === "hook") {
+    await runHook(arg ?? "");
+    return 0;
   }
+  console.error("usage: fold-pet init | run | doctor | hook claude");
+  return 2;
 }
 
 function isEntryPoint(): boolean {
