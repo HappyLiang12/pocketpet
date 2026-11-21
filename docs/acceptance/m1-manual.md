@@ -2,6 +2,8 @@
 
 Status: **NOT RUN**. This is the checklist template; every result starts as `NOT RUN` and only becomes `PASS` when the named producer supplies the evidence.
 
+> UI-specific setup copy, the gear drawer, and the phone global pet write were superseded by the approved 2026-11-21 UIUX direction. The loopback, token, Petdex, agent-adapter, and service evidence below remains historical. New UI evidence lives in `docs/acceptance/uiux-foundation-look.md`.
+
 Rules:
 
 - The tester records the result in this file (or in the task/issue that links to it). **Do not infer a pass from unit tests, Playwright tests, or code inspection.** Automated tests are necessary but do not replace these manual checks.
