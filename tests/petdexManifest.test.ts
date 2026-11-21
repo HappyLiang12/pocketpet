@@ -90,4 +90,23 @@ describe("loadPetdexPets", () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 }));
     expect(await loadPetdexPets({ cacheFile, fetchImpl })).toMatchObject([{ id: "petdex:boba" }]);
   });
+
+  it("preserves display names from cached normalized entries", async () => {
+    root = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const cacheFile = join(root, "manifest.json");
+    writeFileSync(cacheFile, JSON.stringify({
+      fetchedAt: Date.now(),
+      pets: [{
+        id: "petdex:homelander",
+        source: "petdex",
+        slug: "homelander",
+        name: "Homelander",
+        spritesheetUrl: "https://assets.petdex.dev/pets/homelander/sprite.webp",
+        petJsonUrl: "https://assets.petdex.dev/pets/homelander/petjson.json",
+      }],
+    }));
+    const fetchImpl = vi.fn(async () => { throw new Error("offline"); });
+    expect(await loadPetdexPets({ cacheFile, fetchImpl })).toMatchObject([{ id: "petdex:homelander", name: "Homelander" }]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

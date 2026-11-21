@@ -30,9 +30,15 @@ function trustedAssetUrl(raw: string): boolean {
   return url.protocol === "https:" && (url.hostname === "petdex.dev" || url.hostname.endsWith(".petdex.dev"));
 }
 
+function displayName(value: Record<string, unknown>, fallback: string): string {
+  const raw = typeof value.displayName === "string" ? value.displayName : typeof value.name === "string" ? value.name : "";
+  const trimmed = raw.trim();
+  return trimmed !== "" ? trimmed : fallback;
+}
+
 function toPet(value: Record<string, unknown>): PetdexPet | null {
   const slug = typeof value.slug === "string" ? value.slug : null;
-  const name = typeof value.displayName === "string" ? value.displayName : slug;
+  const name = displayName(value, slug ?? "");
   const spritesheetUrl = typeof value.spritesheetUrl === "string" ? value.spritesheetUrl : null;
   const petJsonUrl = typeof value.petJsonUrl === "string" ? value.petJsonUrl : null;
   if (!slug || !name || !spritesheetUrl || !petJsonUrl) return null;
