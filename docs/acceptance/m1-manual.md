@@ -264,7 +264,7 @@ Rules:
 **Evidence:**
 
 ```text
-(paste `npx petdex install boba` output and `ls -la ~/.codex/pets ~/.petdex/pets`)
+(paste `npx petdex install boba` output and `ls -la ~/.fold-pet/pets ~/.codex/pets ~/.petdex/pets`)
 
 (screenshot links before/after; note install path)
 ```
