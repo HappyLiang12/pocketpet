@@ -6,6 +6,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import QRCode from "qrcode";
 import type { Config } from "./config.js";
 import { saveConfig } from "./config.js";
+import { normalizeAppearance, type Appearance } from "./appearance.js";
+import { hostInfo, type HostInfo } from "./host.js";
 import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth.js";
@@ -25,6 +27,7 @@ export interface BridgeOptions {
   ttlMs?: number;
   flashMs?: number;
   localPetDirs?: string[];
+  probeService?: () => Promise<boolean>;
 }
 
 export interface Bridge {
@@ -34,6 +37,8 @@ export interface Bridge {
   broadcast(): void;
   close(): Promise<void>;
 }
+
+type BridgeSnapshot = Snapshot & { appearance: Appearance; host: HostInfo };
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -94,6 +99,25 @@ function serveFile(res: ServerResponse, file: string): void {
   res.end(data);
 }
 
+export function isSetupRequestAllowed(req: IncomingMessage, port: number): boolean {
+  return isLoopback(req.socket.remoteAddress) && isLoopbackHost(req.headers.host, port);
+}
+
+export function isSetupMutationAllowed(req: IncomingMessage, port: number): boolean {
+  if (!isSetupRequestAllowed(req, port)) return false;
+  if (req.headers["x-pocketpet-setup"] !== "1") return false;
+  if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return false;
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    const o = new URL(origin);
+    const h = new URL(`http://${req.headers.host}`);
+    return o.protocol === "http:" && o.hostname === h.hostname && o.port === h.port;
+  } catch {
+    return false;
+  }
+}
+
 export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   const { home, config } = opts;
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -117,7 +141,48 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
       }),
     ];
   }
-  const snapshot = (): Snapshot => aggregator.snapshot(config.activePet, { sleepAfterMinutes: config.sleepAfterMinutes, quietHours: config.quietHours });
+  async function setupSummaries() {
+    return (await petSummaries()).map((pet) => ({
+      ...pet,
+      spriteUrl: pet.spriteUrl.replace(/^\/assets\/pets\//, "/assets/setup/pets/"),
+    }));
+  }
+  function serveLocalPetAsset(rel: string, res: ServerResponse): void {
+    const parts = rel.slice("/local/".length).split("/");
+    if (parts.length !== 2 || !SLUG.test(parts[0]!)) return text(res, 404, "not found");
+    const pet = scanLocalPets(localPetDirs).find((candidate) => candidate.slug === parts[0]);
+    if (!pet) return text(res, 404, "not found");
+    const file = parts[1]!;
+    if (file !== "pet.json" && file !== pet.spriteFile) return text(res, 404, "not found");
+    const target = join(pet.dir, file);
+    if (!existsSync(target)) return text(res, 404, "not found");
+    return serveFile(res, target);
+  }
+  async function servePetdexPetAsset(rel: string, res: ServerResponse): Promise<void> {
+    const parts = rel.slice("/petdex/".length).split("/");
+    if (parts.length !== 2 || !SLUG.test(parts[0]!) || !parts[1]) return text(res, 404, "not found");
+    const pet = (await listPets()).petdex.find((candidate) => candidate.slug === parts[0]);
+    if (!pet) return text(res, 404, "not found");
+    const spriteName = petdexSpriteName(pet.spritesheetUrl);
+    if (!spriteName) return text(res, 404, "not found");
+    const source = parts[1] === "pet.json" ? pet.petJsonUrl : parts[1] === spriteName ? pet.spritesheetUrl : null;
+    if (!source || !petdexUrlAllowed(source)) return text(res, 404, "not found");
+    const cacheDir = join(home, "cache", "petdex", pet.slug);
+    const cachePath = join(cacheDir, parts[1]!);
+    if (!existsSync(cachePath)) {
+      // redirect: "error" keeps the https/petdex.dev allowlist authoritative after redirects.
+      const upstream = await fetchImpl(source, { signal: AbortSignal.timeout(10_000), redirect: "error" });
+      if (!upstream.ok) return text(res, 502, "upstream error");
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(cachePath, Buffer.from(await upstream.arrayBuffer()));
+    }
+    return serveFile(res, cachePath);
+  }
+  const snapshot = (): BridgeSnapshot => ({
+    ...aggregator.snapshot(config.activePet, { sleepAfterMinutes: config.sleepAfterMinutes, quietHours: config.quietHours }),
+    appearance: config.appearance,
+    host: hostInfo(),
+  });
   const broadcast = (): void => {
     const data = JSON.stringify(snapshot());
     for (const client of wsClients) if (client.readyState === WebSocket.OPEN) client.send(data);
@@ -180,6 +245,38 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         });
         return res.end(html);
       }
+      if (req.method === "GET" && path === "/api/setup/look") {
+        if (!isSetupRequestAllowed(req, port)) return text(res, 403, "loopback setup only");
+        return json(res, 200, { appearance: config.appearance, activePet: config.activePet, pets: await setupSummaries() });
+      }
+      if (req.method === "PUT" && path === "/api/setup/look") {
+        if (!isSetupMutationAllowed(req, port)) return text(res, 403, "setup mutation requires same-origin JSON");
+        let value: unknown;
+        try {
+          value = JSON.parse(await readBody(req));
+        } catch {
+          return json(res, 400, { error: { code: "invalid_json", message: "invalid JSON" } });
+        }
+        const body = (value ?? {}) as { appearance?: unknown; activePet?: unknown };
+        const next = normalizeAppearance(body.appearance ?? config.appearance);
+        const pets = await petSummaries();
+        const petId = body.activePet === undefined ? config.activePet : body.activePet;
+        if (petId !== null && (typeof petId !== "string" || !pets.some((pet) => pet.id === petId))) {
+          return json(res, 400, { error: { code: "unknown_pet", message: "unknown pet" } });
+        }
+        config.appearance = next;
+        config.activePet = petId;
+        saveConfig(home, config);
+        broadcast();
+        return json(res, 200, { appearance: config.appearance, activePet: config.activePet });
+      }
+      if (req.method === "GET" && path.startsWith("/assets/setup/pets/")) {
+        if (!isSetupRequestAllowed(req, port)) return text(res, 403, "loopback setup only");
+        const subpath = path.slice("/assets/setup/pets".length); // starts with /local/ or /petdex/
+        if (subpath.startsWith("/local/")) return serveLocalPetAsset(subpath, res);
+        if (subpath.startsWith("/petdex/")) return await servePetdexPetAsset(subpath, res);
+        return text(res, 404, "not found");
+      }
       if (!isAuthorized(req, url, config.token)) return text(res, 401, "unauthorized");
       if (url.searchParams.get("token") === config.token) setTokenCookie(res, config.token);
 
@@ -207,35 +304,10 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         return res.writeHead(204).end();
       }
       if (req.method === "GET" && path.startsWith("/assets/pets/local/")) {
-        const parts = path.slice("/assets/pets/local/".length).split("/");
-        if (parts.length !== 2 || !SLUG.test(parts[0]!)) return text(res, 404, "not found");
-        const pet = scanLocalPets(localPetDirs).find((candidate) => candidate.slug === parts[0]);
-        if (!pet) return text(res, 404, "not found");
-        const file = parts[1]!;
-        if (file !== "pet.json" && file !== pet.spriteFile) return text(res, 404, "not found");
-        const target = join(pet.dir, file);
-        if (!existsSync(target)) return text(res, 404, "not found");
-        return serveFile(res, target);
+        return serveLocalPetAsset(path.slice("/assets/pets".length), res);
       }
       if (req.method === "GET" && path.startsWith("/assets/pets/petdex/")) {
-        const parts = path.slice("/assets/pets/petdex/".length).split("/");
-        if (parts.length !== 2 || !SLUG.test(parts[0]!) || !parts[1]) return text(res, 404, "not found");
-        const pet = (await listPets()).petdex.find((candidate) => candidate.slug === parts[0]);
-        if (!pet) return text(res, 404, "not found");
-        const spriteName = petdexSpriteName(pet.spritesheetUrl);
-        if (!spriteName) return text(res, 404, "not found");
-        const source = parts[1] === "pet.json" ? pet.petJsonUrl : parts[1] === spriteName ? pet.spritesheetUrl : null;
-        if (!source || !petdexUrlAllowed(source)) return text(res, 404, "not found");
-        const cacheDir = join(home, "cache", "petdex", pet.slug);
-        const cachePath = join(cacheDir, parts[1]!);
-        if (!existsSync(cachePath)) {
-          // redirect: "error" keeps the https/petdex.dev allowlist authoritative after redirects.
-          const upstream = await fetchImpl(source, { signal: AbortSignal.timeout(10_000), redirect: "error" });
-          if (!upstream.ok) return text(res, 502, "upstream error");
-          mkdirSync(cacheDir, { recursive: true });
-          writeFileSync(cachePath, Buffer.from(await upstream.arrayBuffer()));
-        }
-        return serveFile(res, cachePath);
+        return await servePetdexPetAsset(path.slice("/assets/pets".length), res);
       }
       return text(res, 404, "not found");
     } catch (error) {

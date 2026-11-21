@@ -30,6 +30,18 @@ afterEach(async () => { await bridge.close(); rmSync(home, { recursive: true, fo
 const base = () => `http://127.0.0.1:${bridge.port}`;
 const authed = () => ({ headers: { cookie } });
 
+async function setupJson(path: string, init: RequestInit = {}) {
+  return fetch(`${base()}${path}`, {
+    ...init,
+    headers: {
+      origin: base(),
+      "x-pocketpet-setup": "1",
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+}
+
 describe("bridge server", () => {
   it("rejects unauthenticated API calls", async () => {
     expect((await fetch(`${base()}/api/state`)).status).toBe(401);
@@ -160,6 +172,90 @@ describe("bridge server setup page", () => {
     expect(detected.status).toBe(200);
     expect(detected.body).toContain('<html lang="zh-Hans">');
     expect(detected.body).toContain("三步完成配对");
+  });
+});
+
+describe("bridge server setup look API", () => {
+  it("includes appearance and host in state and WebSocket snapshots", async () => {
+    const state = await (await fetch(`${base()}/api/state`, authed())).json();
+    expect(state.appearance).toEqual(bridge.config.appearance);
+    expect(state.host.os).toMatch(/^(macOS|Windows|Linux)$/);
+    expect(state.host.bridgeVersion).toBeTruthy();
+    const ws = new WebSocket(`ws://127.0.0.1:${bridge.port}/ws?token=${encodeURIComponent(bridge.config.token)}`);
+    const first = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      ws.once("message", (data) => resolve(JSON.parse(String(data))));
+      ws.once("error", reject);
+    });
+    expect(first.appearance).toEqual(bridge.config.appearance);
+    expect(first.host).toMatchObject({ os: state.host.os, bridgeVersion: state.host.bridgeVersion });
+    ws.close();
+  });
+
+  it("serves setup look without a token and saves host appearance with CSRF", async () => {
+    const look = await (await fetch(`${base()}/api/setup/look`)).json();
+    expect(look.appearance).toEqual(bridge.config.appearance);
+    expect(look.activePet).toBeNull();
+    expect(Array.isArray(look.pets)).toBe(true);
+
+    const denied = await fetch(`${base()}/api/setup/look`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ appearance: { theme: "light" } }),
+    });
+    expect(denied.status).toBe(403);
+
+    const saved = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ appearance: { ...bridge.config.appearance, theme: "light", clock: { scale: 140 } } }),
+    });
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).appearance).toMatchObject({ theme: "light", clock: { scale: 140 } });
+    expect(bridge.config.appearance).toMatchObject({ theme: "light", clock: { scale: 140 } });
+    const state = await (await fetch(`${base()}/api/state`, authed())).json();
+    expect(state.appearance).toMatchObject({ theme: "light", clock: { scale: 140 } });
+  });
+
+  it("rejects unknown host pets from setup", async () => {
+    const res = await setupJson("/api/setup/look", {
+      method: "PUT",
+      body: JSON.stringify({ activePet: "local:nope" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("serves setup-only pet sprites without the phone cookie", async () => {
+    const petDir = join(home, "pets", "demo");
+    mkdirSync(petDir, { recursive: true });
+    writeFileSync(join(petDir, "pet.json"), JSON.stringify({ displayName: "Demo" }));
+    writeFileSync(join(petDir, "spritesheet.webp"), "RIFF-demo");
+
+    const look = await (await fetch(`${base()}/api/setup/look`)).json();
+    expect(look.pets).toContainEqual(expect.objectContaining({
+      id: "local:demo",
+      spriteUrl: "/assets/setup/pets/local/demo/spritesheet.webp",
+    }));
+    const sprite = await fetch(`${base()}/assets/setup/pets/local/demo/spritesheet.webp`);
+    expect(sprite.status).toBe(200);
+    expect(await sprite.text()).toBe("RIFF-demo");
+    expect((await fetch(`${base()}/assets/setup/pets/local/..%2F..%2Fpackage.json`)).status).toBe(404);
+  });
+
+  it("refuses setup mutations from a foreign Origin", async () => {
+    const res = await fetch(`${base()}/api/setup/look`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-pocketpet-setup": "1",
+        origin: "http://evil.example",
+      },
+      body: JSON.stringify({ appearance: { theme: "light" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses setup look reads with a non-loopback Host header", async () => {
+    const res = await rawGet("/api/setup/look", { host: "evil.example" });
+    expect(res.status).toBe(403);
   });
 });
 
