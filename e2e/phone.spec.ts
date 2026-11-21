@@ -332,12 +332,66 @@ test("applies host appearance and can reset this phone", async ({ page }) => {
   ).toBe("1.4");
   await openTab(page, "look");
   await expect(page.locator("#follow-host")).toBeChecked();
-  await expect(page.locator("#open-studio")).toBeDisabled();
+  await expect(page.locator("#open-studio")).toBeEnabled();
   await page.locator("#follow-host").uncheck();
   await page.locator("#reset-look").click();
   await expect(page.locator("#follow-host")).toBeChecked();
   // Resetting this phone restores follow-host; it must not write host state.
   expect((await hostLook()).appearance.clock.scale).toBe(140);
+});
+
+test("saves a phone-only Studio override without changing host defaults", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await openTab(page, "look");
+  await page.locator("#open-studio").click();
+  const studio = page.locator("#studio");
+  await expect(studio).toBeVisible();
+  await expect(studio.locator(".studio-scope")).toHaveText(/This phone|此手機|此手机/);
+  await studio.locator('[data-field="clock.scale"]').fill("130");
+  await studio.locator('[data-field="clock.scale"]').dispatchEvent("input");
+  await studio.locator('[data-act="save"]').click();
+  await expect(studio).toBeHidden();
+  const scale = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(scale).toBe("1.3");
+  const stored = await page.evaluate(() => localStorage.getItem("pocketpet.look"));
+  expect(stored).toContain("130");
+  const host = await (await page.request.get("/api/setup/look")).json();
+  expect(host.appearance.clock.scale).toBe(100);
+  await page.reload();
+  await expect(page.locator("#stage")).toHaveAttribute("data-layout-mode", /stack|free/);
+  const scaleAfterReload = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(scaleAfterReload).toBe("1.3");
+
+  // A later host change must not overwrite the custom phone: the pet follows
+  // the broadcast while the phone's own clock override stays in force.
+  await setHostLook({
+    appearance: {
+      ...DEFAULT_APPEARANCE,
+      clock: { ...DEFAULT_APPEARANCE.clock, scale: 140 },
+      pet: { ...DEFAULT_APPEARANCE.pet, scale: 150 },
+    },
+  });
+  await expect.poll(
+    () => page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--pet-scale").trim()),
+  ).toBe("1.5");
+  const customScale = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(customScale).toBe("1.3");
+  expect((await hostLook()).appearance.clock.scale).toBe(140);
+});
+
+test("a follow-host phone applies a host Studio change", async ({ page }) => {
+  await setHostLook({ appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  // The setup save must not race the phone's WebSocket: wait for the connected
+  // state so the broadcast snapshot reaches this page.
+  await expect(page.locator("#conn")).toHaveText("已連線");
+  await openTab(page, "look");
+  await expect(page.locator("#follow-host")).toBeChecked();
+  await setHostLook({ appearance: { ...DEFAULT_APPEARANCE, pet: { ...DEFAULT_APPEARANCE.pet, scale: 150 } } });
+  await expect.poll(async () => page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--pet-scale").trim())).toBe("1.5");
 });
 
 // These tests mutate the shared host state. Restore the seeded defaults with

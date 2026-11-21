@@ -1,6 +1,7 @@
 import "./style.css";
 import {
   DEFAULT_APPEARANCE,
+  diffAppearance,
   normalizeAppearance,
   resolveLook,
   type Appearance,
@@ -13,6 +14,7 @@ import { isQuiet } from "./quiet.js";
 import { keepAwake, type WakeStatus } from "./wake.js";
 import { bindStage, applyStage, formatClock, resolveMotion, watchSystemAppearance } from "./look/stage.js";
 import { canUseLocalStorage, readLocalLook, writeLocalLook } from "./look/store.js";
+import { openStudio } from "./look/studio.js";
 import {
   LANG_STORAGE_KEY,
   isLang,
@@ -351,6 +353,7 @@ function renderLook(appearance: Appearance): void {
     return [dt, dd];
   }));
   openStudioButton.textContent = t(lang, "look.openStudio");
+  openStudioButton.disabled = false;
   resetLookButton.textContent = t(lang, "look.reset");
   openLookButton.textContent = t(lang, "live.editLook");
   lookStorageNotice.hidden = !localWriteFailed;
@@ -542,6 +545,31 @@ function boot(): void {
   watchSystemAppearance(() => applyLook());
   followHost.addEventListener("change", () => setFollowHost(followHost.checked));
   resetLookButton.addEventListener("click", () => saveLocal({ v: 1, followHost: true, overrides: {}, petId: null }));
+  openStudioButton.addEventListener("click", () => {
+    const selectedId = currentPetId();
+    const selectedPet = selectedId ? pets.find((candidate) => candidate.id === selectedId) : undefined;
+    openStudio({
+      appearance: currentAppearance(),
+      pet: selectedPet
+        ? { id: selectedPet.id, name: selectedPet.name, spriteUrl: selectedPet.spriteUrl }
+        : null,
+      lang,
+      scope: "phone",
+      // A phone Studio save is local-only: persist the sparse diff against the
+      // host look and turn follow-host off. The host is never written.
+      onSave: async (next) => {
+        const nextLocal: LocalLook = {
+          v: 1,
+          followHost: false,
+          overrides: diffAppearance(hostAppearance, next),
+          petId: localLook.petId,
+        };
+        localLook = nextLocal;
+        localWriteFailed = !writeLocalLook(nextLocal);
+        applyLook();
+      },
+    });
+  });
   tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab as TabName)));
   tabList.addEventListener("keydown", (event) => {
     const index = tabs.findIndex((tab) => tab.dataset.tab === activeTab);

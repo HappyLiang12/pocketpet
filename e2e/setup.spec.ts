@@ -6,9 +6,10 @@ import { DEFAULT_APPEARANCE } from "../src/appearance.js";
 // their own en-US contexts and are unaffected.
 test.use({ locale: "en-US" });
 
-const SETUP_ORIGIN = "http://127.0.0.1:7799";
+const ORIGIN = "http://127.0.0.1:7799";
+const TOKEN = "e2e-token-0123456789";
 const SETUP_HEADERS = {
-  origin: SETUP_ORIGIN,
+  origin: ORIGIN,
   "x-pocketpet-setup": "1",
   "content-type": "application/json",
 };
@@ -79,6 +80,7 @@ test.describe("setup look", () => {
     await openStudio.click();
     const studio = page.locator("#studio");
     await expect(studio).toBeVisible();
+    await expect(studio.locator(".studio-scope")).toHaveText(/Host defaults|電腦預設|电脑默认/);
     await expect(studio.locator('.studio-pet[data-element="pet"] [data-pet]')).toBeVisible();
 
     // Type the digits for real: fill() alone would not catch the Studio's
@@ -190,11 +192,36 @@ test.describe("setup look", () => {
     await expect(page.locator("#look-app .look-summary")).toBeVisible();
   });
 
+  // A phone Studio save writes only its own local override; the shared
+  // afterAll reset must still be the only host mutation from this file.
+  test("a phone local override does not change host defaults", async ({ browser, page }) => {
+    await page.request.put("/api/setup/look", {
+      headers: SETUP_HEADERS,
+      data: { appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" },
+    });
+    const phone = await browser.newPage();
+    await phone.goto(`/?token=${TOKEN}`);
+    await phone.locator("#sheet-tabs [data-tab='look']").click();
+    await phone.locator("#open-studio").click();
+    await expect(phone.locator("#studio")).toBeVisible();
+    await expect(phone.locator("#studio .studio-scope")).toHaveText(/This phone|此手機|此手机/);
+    await phone.locator("#studio [data-field='clock.scale']").fill("145");
+    await phone.locator("#studio [data-field='clock.scale']").dispatchEvent("input");
+    await phone.locator("#studio [data-act='save']").click();
+    // The Studio closes only after its local save resolves.
+    await expect(phone.locator("#studio")).toBeHidden();
+    const stored = await phone.evaluate(() => localStorage.getItem("pocketpet.look"));
+    expect(stored).toContain("145");
+    const host = await (await page.request.get("/api/setup/look")).json();
+    expect(host.appearance.clock.scale).toBe(100);
+    await phone.close();
+  });
+
   // These tests mutate the shared host state. Restore the seeded defaults with
   // the same setup API contract even when a test fails, so later spec files
   // (phone.spec.ts expects local:testpet) do not inherit the change.
   test.afterAll(async () => {
-    const api = await request.newContext({ baseURL: SETUP_ORIGIN });
+    const api = await request.newContext({ baseURL: ORIGIN });
     try {
       const response = await api.put("/api/setup/look", {
         headers: SETUP_HEADERS,
