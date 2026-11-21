@@ -25,6 +25,7 @@ export class PetRenderer {
   private geometry: AtlasGeometry | null = null;
   private state: PetState = "idle";
   private frame = 0;
+  private reduced = false;
   private last = performance.now();
   private raf = 0;
   private generation = 0;
@@ -54,6 +55,11 @@ export class PetRenderer {
     this.last = performance.now();
   }
 
+  setReducedMotion(reduced: boolean): void {
+    this.reduced = reduced;
+    if (reduced) this.frame = 0;
+  }
+
   start(): void {
     cancelAnimationFrame(this.raf);
     const loop = (now: number): void => {
@@ -72,7 +78,7 @@ export class PetRenderer {
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
     const def = STATES[this.state];
-    if (now - this.last >= (def.frames[this.frame] ?? 150)) {
+    if (!this.reduced && now - this.last >= (def.frames[this.frame] ?? 150)) {
       this.frame = (this.frame + 1) % def.frames.length;
       this.last = now;
     }
