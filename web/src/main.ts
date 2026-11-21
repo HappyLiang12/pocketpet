@@ -1,12 +1,12 @@
 import "./style.css";
 import { PetRenderer, type PetState } from "./sprite.js";
 import { connectState } from "./ws.js";
+import { filterPets, type PetSummary } from "./catalog.js";
 import { isQuiet } from "./quiet.js";
 import { WAKE_LABELS, keepAwake } from "./wake.js";
 
 interface Session { key: string; agent: string; project: string; phase: string; tool?: string; startedAt: number; lastEventAt: number; }
 interface Snapshot { now: number; pet: string; sessions: Session[]; activePet: string | null; sleepAfterMinutes: number; quietHours: { start: string; end: string } | null; }
-interface PetSummary { id: string; name: string; spriteUrl: string; }
 
 const AGENT_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode", pi: "Pi", qoder: "Qoder" };
 const PHASE_LABEL: Record<string, string> = { started: "開始", working: "工作中", waiting: "等待中", review: "待審", done: "完成", failed: "失敗", idle: "閒置" };
@@ -22,6 +22,7 @@ const canvas = byId<HTMLCanvasElement>("pet");
 const drawer = byId("drawer");
 const gear = byId("gear");
 const petList = byId("pet-list");
+const petSearch = byId<HTMLInputElement>("pet-search");
 const wakeInfo = byId("wake-info");
 const renderer = new PetRenderer(canvas);
 renderer.start();
@@ -72,23 +73,27 @@ async function loadPets(): Promise<void> {
     if (!response.ok) return;
     const data = (await response.json()) as { pets: PetSummary[] };
     pets = data.pets;
-    petList.replaceChildren(...pets.map((pet) => {
-      const label = document.createElement("label");
-      label.className = "pet-option";
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = "pet";
-      input.value = pet.id;
-      input.checked = pet.id === petId;
-      input.addEventListener("change", () => { void selectPet(pet.id); });
-      const name = document.createElement("span");
-      name.textContent = pet.name;
-      label.append(input, name);
-      return label;
-    }));
+    renderPetList();
   } catch {
     return;
   }
+}
+
+function renderPetList(): void {
+  petList.replaceChildren(...filterPets(pets, petSearch.value).map((pet) => {
+    const label = document.createElement("label");
+    label.className = "pet-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "pet";
+    input.value = pet.id;
+    input.checked = pet.id === petId;
+    input.addEventListener("change", () => { void selectPet(pet.id); });
+    const name = document.createElement("span");
+    name.textContent = pet.name;
+    label.append(input, name);
+    return label;
+  }));
 }
 
 async function selectPet(id: string): Promise<void> {
@@ -121,7 +126,7 @@ async function applyPet(id: string | null): Promise<void> {
   } else {
     stage.dataset.petReady = "true";
   }
-  await loadPets();
+  renderPetList();
 }
 
 function applySnapshot(snapshot: Snapshot): void {
@@ -146,8 +151,12 @@ function boot(): void {
 
   gear.addEventListener("click", () => {
     drawer.hidden = !drawer.hidden;
-    if (!drawer.hidden) void loadPets();
+    if (!drawer.hidden) {
+      if (pets.length === 0) void loadPets();
+      else renderPetList();
+    }
   });
+  petSearch.addEventListener("input", renderPetList);
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.hidden = true; });
 
   fetch("/api/state").then((res) => (res.ok ? res.json() : null)).then((snapshot) => { if (snapshot) applySnapshot(snapshot as Snapshot); }).catch(() => undefined);

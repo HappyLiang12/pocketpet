@@ -45,6 +45,17 @@ test("loads the active pet sprite and switches pets from the drawer", async ({ p
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
 });
 
+test("caps the pet gallery and filters it by name", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await page.locator("#gear").click();
+  // 4 local pets + the 50-entry gallery window.
+  await expect(page.locator("#pet-list input[name=pet]")).toHaveCount(54);
+  await page.locator("#pet-search").fill("Gallery Pet 55");
+  await expect(page.locator("#pet-list input[name=pet]")).toHaveCount(5);
+  await expect(page.locator("#pet-list")).toContainText("Gallery Pet 55");
+});
+
 test("shows a localized wake-lock status", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);

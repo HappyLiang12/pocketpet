@@ -35,6 +35,7 @@ body.quiet { filter: brightness(0.4); }
 @keyframes pulse { 50% { opacity: 0.45; } }
 #drawer { position: fixed; inset: auto 12px 12px; max-height: 70vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; z-index: 10; }
 #drawer h2 { font-size: 16px; margin: 0 0 10px; }
+#pet-search { width: 100%; margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 14px; }
 .pet-option { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
 #wake-info { color: var(--muted); font-size: 12px; }
 @media (min-aspect-ratio: 1/1) and (min-width: 600px) {
