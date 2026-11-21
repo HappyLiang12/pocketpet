@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -26,6 +26,33 @@ describe("installClaudeHooks", () => {
     dir = mkdtempSync(join(tmpdir(), "foldpet-"));
     const file = join(dir, "settings.json");
     expect(installClaudeHooks(file).added).toEqual([...CLAUDE_HOOK_EVENTS]);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(existsSync(`${file}.tmp`)).toBe(false);
+  });
+
+  it("preserves the existing settings file mode", () => {
+    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const file = join(dir, "settings.json");
+    writeFileSync(file, JSON.stringify({ model: "opus" }));
+    chmodSync(file, 0o600);
+    expect(installClaudeHooks(file).added).toEqual([...CLAUDE_HOOK_EVENTS]);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(existsSync(`${file}.tmp`)).toBe(false);
+  });
+
+  it("writes through a symlinked settings path without replacing the link", () => {
+    dir = mkdtempSync(join(tmpdir(), "foldpet-"));
+    const real = join(dir, "real-settings.json");
+    const link = join(dir, "settings.json");
+    writeFileSync(real, JSON.stringify({ model: "opus" }));
+    symlinkSync(real, link);
+    const result = installClaudeHooks(link);
+    expect(result.added).toEqual([...CLAUDE_HOOK_EVENTS]);
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    const saved = JSON.parse(readFileSync(real, "utf8"));
+    expect(saved.model).toBe("opus");
+    expect(saved.hooks.Stop).toHaveLength(1);
+    expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("rejects invalid JSON", () => {

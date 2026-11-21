@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const CLAUDE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "SubagentStop", "Stop", "SessionEnd"] as const;
@@ -58,9 +58,24 @@ export function installClaudeHooks(settingsPath: string, command = HOOK_COMMAND)
 
   settings.hooks = hooks;
   if (added.length === 0) return { added, already };
-  mkdirSync(dirname(settingsPath), { recursive: true });
-  const tmpPath = `${settingsPath}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + "\n");
-  renameSync(tmpPath, settingsPath);
+
+  // Follow symlinks so the rename replaces the real settings file instead of
+  // the link, and keep the existing owner/group/other bits. Claude writes this
+  // file itself, so a fresh one defaults to owner-only.
+  const target = existsSync(settingsPath) ? realpathSync(settingsPath) : settingsPath;
+  const mode = existsSync(target) ? statSync(target).mode & 0o777 : 0o600;
+  mkdirSync(dirname(target), { recursive: true });
+  const tmpPath = `${target}.tmp`;
+  try {
+    writeFileSync(tmpPath, JSON.stringify(settings, null, 2) + "\n", { mode });
+    renameSync(tmpPath, target);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // The temp file may never have been created.
+    }
+    throw error;
+  }
   return { added, already };
 }

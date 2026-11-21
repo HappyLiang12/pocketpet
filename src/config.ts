@@ -1,7 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
 
 export type QuietHours = { start: string; end: string };
 export type Config = {
@@ -21,9 +24,9 @@ export function configPath(home: string): string {
 }
 
 export function ensureConfig(home: string): Config {
-  mkdirSync(join(home, "pets"), { recursive: true });
-  mkdirSync(join(home, "cache", "petdex"), { recursive: true });
-  mkdirSync(join(home, "logs"), { recursive: true });
+  mkdirSync(join(home, "pets"), { recursive: true, mode: DIR_MODE });
+  mkdirSync(join(home, "cache", "petdex"), { recursive: true, mode: DIR_MODE });
+  mkdirSync(join(home, "logs"), { recursive: true, mode: DIR_MODE });
   if (existsSync(configPath(home))) return loadConfig(home);
   const config: Config = {
     token: randomBytes(32).toString("base64url"),
@@ -51,6 +54,19 @@ export function loadConfig(home: string): Config {
 }
 
 export function saveConfig(home: string, config: Config): void {
-  mkdirSync(home, { recursive: true });
-  writeFileSync(configPath(home), JSON.stringify(config, null, 2) + "\n");
+  mkdirSync(home, { recursive: true, mode: DIR_MODE });
+  const target = configPath(home);
+  const mode = existsSync(target) ? statSync(target).mode & 0o777 : FILE_MODE;
+  const tmpPath = `${target}.tmp`;
+  try {
+    writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", { mode });
+    renameSync(tmpPath, target);
+  } catch (error) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {
+      // The temp file may never have been created.
+    }
+    throw error;
+  }
 }
