@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { askYesNo, localHostname, pairingLinks, setupDeniedHtml, setupHtml } from "../src/onboarding.js";
+import { askYesNo, localHostname, pairingLinks } from "../src/onboarding.js";
 
 const fakeIfaces = {
   en0: [{ address: "192.168.1.5", family: "IPv4", internal: false, netmask: "255.255.255.0", mac: "aa", cidr: null }],
@@ -78,110 +78,6 @@ describe("pairingLinks", () => {
     expect(links.localUrl).toBe("http://happy-mac.local:7788/?token=tok");
     expect(links.qrUrl).toBeNull();
     expect(links.usbUrl).toBe("http://127.0.0.1:7788/?token=tok");
-  });
-});
-
-describe("setupHtml", () => {
-  const base = {
-    qrSvg: '<svg xmlns="http://www.w3.org/2000/svg"><rect /></svg>',
-    ipUrls: ["http://192.168.1.5:7788/?token=tok", "http://100.64.0.2:7788/?token=tok"],
-    localUrl: "http://happy-mac.local:7788/?token=tok",
-    port: 7788,
-  };
-
-  it("embeds the trusted QR SVG and every pairing URL", () => {
-    const html = setupHtml(base);
-    expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"><rect /></svg>');
-    for (const url of base.ipUrls) expect(html).toContain(url);
-    expect(html).toContain(base.localUrl);
-  });
-
-  it("includes the three pairing steps, the .local option and the USB fallback in Traditional Chinese", () => {
-    const html = setupHtml({ ...base, lang: "zh-Hant" });
-    expect(html).toContain('<html lang="zh-Hant">');
-    expect(html).toContain("同一個 Wi-Fi");
-    expect(html).toContain("相機");
-    expect(html).toContain("加到主畫面");
-    expect(html).toContain("可以重複使用");
-    expect(html).toContain("只供 Mac");
-    expect(html).toContain("ERR_TOO_MANY_RETRIES");
-    expect(html).toContain("unauthorized");
-    expect(html).toContain("Always use secure connections");
-    expect(html).toContain("Bonjour");
-    expect(html).toContain("adb reverse tcp:7788 tcp:7788");
-    expect(html).toContain("http://127.0.0.1:7788/?token=tok");
-  });
-
-  it("defaults to English copy", () => {
-    const html = setupHtml(base);
-    expect(html).toContain('<html lang="en">');
-    expect(html).toContain("Pair in three steps");
-    expect(html).toContain("Same Wi-Fi");
-    expect(html).toContain("Scan with the camera");
-    expect(html).toContain("Add to Home Screen");
-    expect(html).toContain("reusable until token changes");
-    expect(html).not.toContain("三步完成配對");
-  });
-
-  it("renders Simplified Chinese copy", () => {
-    const html = setupHtml({ ...base, lang: "zh-Hans" });
-    expect(html).toContain('<html lang="zh-Hans">');
-    expect(html).toContain("三步完成配对");
-    expect(html).toContain("用相机扫描");
-    expect(html).toContain("添加到主屏幕");
-    expect(html).toContain("局域网网址");
-    expect(html).not.toContain("配對");
-    expect(html).not.toContain("區網");
-  });
-
-  it("explains Mac-only access to the setup page without a token", () => {
-    const html = setupDeniedHtml(7788, "zh-Hant");
-    expect(html).toContain('<html lang="zh-Hant">');
-    expect(html).toContain("只限 Mac");
-    expect(html).toContain("127.0.0.1:7788");
-    expect(html).toContain("重複使用");
-    expect(html).not.toContain("?token=");
-  });
-
-  it("uses an explicit usbUrl, keeping the token even when no LAN URL exists", () => {
-    const html = setupHtml({
-      qrSvg: "",
-      ipUrls: [],
-      localUrl: null,
-      port: 7788,
-      usbUrl: "http://127.0.0.1:7788/?token=a%20b%26c",
-    });
-    expect(html).toContain("http://127.0.0.1:7788/?token=a%20b%26c");
-    expect(html).toContain("adb reverse tcp:7788 tcp:7788");
-  });
-
-  it("omits the QR card and shows a QR-unavailable note when the SVG is empty", () => {
-    const html = setupHtml({ ...base, qrSvg: "", lang: "zh-Hant" });
-    expect(html).not.toContain('class="qr"');
-    expect(html).not.toContain("對準上面嘅 QR code");
-    expect(html).toContain("QR code 暫時無法產生");
-    expect(html).toContain("http://192.168.1.5:7788/?token=tok");
-  });
-
-  it("omits the .local section when no hostname is available", () => {
-    const html = setupHtml({ ...base, localUrl: null });
-    expect(html).not.toContain("Bonjour");
-    expect(html).not.toContain(".local");
-  });
-
-  it("escapes injected URLs and has no external scripts or assets", () => {
-    const evil = 'http://192.168.1.5:7788/?token="><script>alert(1)</script>';
-    const html = setupHtml({ ...base, qrSvg: "<svg></svg>", ipUrls: [evil], localUrl: null });
-    expect(html).not.toContain("<script>");
-    expect(html).toContain("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(html).not.toContain("<link");
-    expect(html).not.toContain("<script");
-  });
-
-  it("escapes a hostile .local URL too", () => {
-    const html = setupHtml({ ...base, localUrl: 'http://x"><img src=x onerror=alert(1)>.local:7788/' });
-    expect(html).not.toContain("<img");
-    expect(html).toContain("&lt;img");
   });
 });
 

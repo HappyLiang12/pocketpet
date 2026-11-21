@@ -54,6 +54,11 @@ const en = {
   "trouble.setupBody": "/setup only opens on the Mac; phones scan the QR code.",
   "trouble.reachTitle": "Cannot reach the Mac",
   "trouble.reachBody": "Confirm the phone is on the same WiFi/subnet (guest networks and AP isolation block it), or use USB: adb reverse tcp:7788 tcp:7788.",
+  "look.clock": "Clock",
+  "look.pet": "Pet",
+  "look.petSize": "Pet size",
+  "look.layout": "Layout",
+  "common.error": "Could not load the look.",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -108,6 +113,11 @@ const zhHant: Record<MessageKey, string> = {
   "trouble.setupBody": "/setup 必須在 Mac 上開啟；手機請掃描 QR Code。",
   "trouble.reachTitle": "連不到 Mac",
   "trouble.reachBody": "確認手機與 Mac 在同一個 WiFi／子網（訪客網路與 AP 隔離會阻擋），或改用 USB：adb reverse tcp:7788 tcp:7788。",
+  "look.clock": "時鐘",
+  "look.pet": "寵物",
+  "look.petSize": "寵物大小",
+  "look.layout": "版面",
+  "common.error": "無法載入外觀。",
 };
 
 const zhHans: Record<MessageKey, string> = {
@@ -160,6 +170,11 @@ const zhHans: Record<MessageKey, string> = {
   "trouble.setupBody": "/setup 必须在 Mac 上打开；手机请扫描二维码。",
   "trouble.reachTitle": "连不上 Mac",
   "trouble.reachBody": "确认手机与 Mac 在同一个 WiFi／子网（访客网络与 AP 隔离会阻挡），或改用 USB：adb reverse tcp:7788 tcp:7788。",
+  "look.clock": "时钟",
+  "look.pet": "宠物",
+  "look.petSize": "宠物大小",
+  "look.layout": "布局",
+  "common.error": "无法加载外观。",
 };
 
 export const STRINGS: Record<Lang, Record<MessageKey, string>> = {

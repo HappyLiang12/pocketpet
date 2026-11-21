@@ -14,9 +14,12 @@ let cookie = "";
 
 /** Spy for the Petdex manifest fetch so tests can prove when the catalog is (not) loaded. */
 const petdexFetch = vi.fn(async () => { throw new Error("offline"); });
+/** Spy for the login-service probe so tests never touch real launchd state. */
+const probeService = vi.fn(async () => false);
 
 beforeEach(async () => {
   petdexFetch.mockClear();
+  probeService.mockClear();
   home = mkdtempSync(join(tmpdir(), "pocketpet-"));
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
@@ -24,7 +27,7 @@ beforeEach(async () => {
   const config = ensureConfig(home);
   bridge = await startBridge({
     home, config, webDist, port: 0, localPetDirs: [join(home, "pets")],
-    fetchImpl: petdexFetch,
+    fetchImpl: petdexFetch, probeService,
   });
   const res = await fetch(`http://127.0.0.1:${bridge.port}/?token=${encodeURIComponent(config.token)}`);
   cookie = String(res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
@@ -117,12 +120,23 @@ describe("bridge server setup page", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("referrer-policy")).toBe("no-referrer");
-    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; style-src 'unsafe-inline'");
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
     const html = await res.text();
     expect(html).toContain("<svg");
     expect(html).toContain(`?token=${encodeURIComponent(bridge.config.token)}`);
     expect(html).toContain(`127.0.0.1:${bridge.port}/`);
+    expect(html).toContain("This computer");
+    expect(html).toContain("Open phone view");
+    expect(html).toContain("Open Studio");
+    expect(html).toContain("Bridge version");
+    expect(html).toContain("loopback-only");
+    expect(html).not.toMatch(/\bMac\b/);
     expect(bridge.port).not.toBe(bridge.config.port);
+    const service = process.platform === "darwin" ? "Not running" : "Not available on this platform";
+    expect(html).toContain(service);
+    if (process.platform === "darwin") expect(probeService).toHaveBeenCalled();
   });
 
   it("accepts the loopback Host forms with the actual listening port", async () => {
@@ -133,8 +147,8 @@ describe("bridge server setup page", () => {
     }
   });
 
-  it("refuses a non-loopback Host header with a Mac-only page (DNS rebinding)", async () => {
-    const phrases = { en: "Mac-only", "zh-Hant": "只限 Mac", "zh-Hans": "仅限 Mac" } as const;
+  it("refuses a non-loopback Host header with a computer-only page (DNS rebinding)", async () => {
+    const phrases = { en: "computer", "zh-Hant": "電腦", "zh-Hans": "电脑" } as const;
     for (const host of ["evil.example", `evil.example:${bridge.port}`, `localhost:${bridge.port + 1}`]) {
       for (const [lang, phrase] of Object.entries(phrases)) {
         const res = await rawGet(`/setup?lang=${lang}`, { host });
@@ -142,6 +156,7 @@ describe("bridge server setup page", () => {
         expect(res.headers["content-type"], `Host: ${host} lang: ${lang}`).toBe("text/html; charset=utf-8");
         expect(res.headers["cache-control"], `Host: ${host} lang: ${lang}`).toBe("no-store");
         expect(res.body, `Host: ${host} lang: ${lang}`).toContain(phrase);
+        expect(res.body, `Host: ${host} lang: ${lang}`).not.toContain("Mac-only");
         expect(res.body).not.toContain(bridge.config.token);
       }
     }
@@ -151,7 +166,7 @@ describe("bridge server setup page", () => {
     const res = await rawGet("/setup", { host: "evil.example", "accept-language": "zh-TW,zh;q=0.9" });
     expect(res.status).toBe(403);
     expect(res.body).toContain('<html lang="zh-Hant">');
-    expect(res.body).toContain("只限 Mac");
+    expect(res.body).toContain("電腦");
     expect(res.body).not.toContain(bridge.config.token);
   });
 
@@ -177,6 +192,35 @@ describe("bridge server setup page", () => {
     expect(detected.status).toBe(200);
     expect(detected.body).toContain('<html lang="zh-Hans">');
     expect(detected.body).toContain("三步完成配对");
+  });
+
+  it("serves the manifest setup script and stylesheet on loopback without a cookie", async () => {
+    const webDist = join(home, "web");
+    writeFileSync(join(webDist, "manifest.json"), JSON.stringify({
+      "src/setup/main.ts": { isEntry: true, file: "assets/setup-test.js", css: ["assets/setup-test.css"] },
+    }));
+    mkdirSync(join(webDist, "assets"), { recursive: true });
+    writeFileSync(join(webDist, "assets", "setup-test.js"), "console.log('setup');");
+    writeFileSync(join(webDist, "assets", "setup-test.css"), ":root { color-scheme: light dark; }");
+
+    const page = await (await fetch(`${base()}/setup`)).text();
+    expect(page).toContain('<script type="module" src="/assets/web/assets/setup-test.js"></script>');
+    expect(page).toContain('<link rel="stylesheet" href="/assets/web/assets/setup-test.css">');
+    expect(page).not.toMatch(/<script(?![^>]*src=)[^>]*>/);
+
+    const script = await fetch(`${base()}/assets/web/assets/setup-test.js`);
+    expect(script.status).toBe(200);
+    expect(script.headers.get("content-type")).toContain("text/javascript");
+    const scriptBody = await script.text();
+    expect(scriptBody).toBe("console.log('setup');");
+    expect(scriptBody).not.toContain(bridge.config.token);
+
+    const css = await fetch(`${base()}/assets/web/assets/setup-test.css`);
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toContain("text/css");
+    expect(await css.text()).toContain("color-scheme");
+
+    expect(page).not.toMatch(/"token"\s*:/);
   });
 });
 
@@ -396,8 +440,19 @@ describe("bridge server security", () => {
     expect(await res.json()).toMatchObject({ ok: true });
   });
 
-  it("requires the token for assets", async () => {
-    expect((await fetch(`${base()}/assets/web/index.html`)).status).toBe(401);
+  it("serves loopback web assets without a cookie and requires the token elsewhere", async () => {
+    const loopback = await fetch(`${base()}/assets/web/index.html`);
+    expect(loopback.status).toBe(200);
+    expect(await loopback.text()).toBe("<html>ok</html>");
+
+    const foreignHost = await rawGet("/assets/web/index.html", { host: "evil.example" });
+    expect(foreignHost.status).toBe(401);
+
+    // A LAN request carries the host's LAN address, so it misses the loopback branch.
+    const lan = await rawGet("/assets/web/index.html", { host: `192.168.1.5:${bridge.port}` });
+    expect(lan.status).toBe(401);
+
+    expect((await fetch(`${base()}/assets/web/index.html`, authed())).status).toBe(200);
   });
 
   it("refuses path traversal under the static root", async () => {
