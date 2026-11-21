@@ -154,7 +154,8 @@ function render(): void {
   };
   add(webT(lang, "look.clock"), `${appearance.clock.scale}%`);
   add(webT(lang, "look.petSize"), `${appearance.pet.scale}%`);
-  add(webT(lang, "look.layout"), `${appearance.layout.mode} · ${appearance.layout.gap}`);
+  const layoutLabel = webT(lang, appearance.layout.mode === "free" ? "look.layoutFree" : "look.layoutStack");
+  add(webT(lang, "look.layout"), `${layoutLabel} · ${appearance.layout.gap}`);
   add(webT(lang, "look.pet"), activePet?.name ?? webT(lang, "look.noPets"));
 
   const actions = document.createElement("div");

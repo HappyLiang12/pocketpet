@@ -47,10 +47,10 @@ edit was needed.
 | Setup dashboard on the real computer (Pair/Look/System) | Tester | Screenshot with token/QR redacted | NOT RUN |
 | Setup Studio saves host appearance; reload keeps it | Tester + E2E | `e2e/setup.spec.ts:64` saves through `/api/setup/look`, asserts the API and reload; manual screenshot not taken | PASS (E2E); manual NOT RUN |
 | Setup pet picker sets the host pet | Tester + E2E | `e2e/setup.spec.ts:122` changes the host pet through setup Look; manual screenshot not taken | PASS (E2E); manual NOT RUN |
-| Phone follows host appearance after setup save | Tester + E2E | `e2e/phone.spec.ts:384` saves a host appearance and observes the phone update through the WS snapshot; manual phone screenshot not taken | PASS (E2E); manual NOT RUN |
+| Phone follows a host appearance change seeded through the setup API | Tester + E2E | `e2e/phone.spec.ts:384` seeds the host appearance through `PUT /api/setup/look` and observes the phone update through the WS snapshot; manual phone screenshot not taken | PASS (E2E); manual NOT RUN |
 | Phone local Studio override persists and does not change host | Tester + E2E | `e2e/phone.spec.ts:343` and `e2e/setup.spec.ts:197`: local storage, reload, and unchanged host API; manual evidence not taken | PASS (E2E); manual NOT RUN |
 | Folded and wide postures on the real phone, with the bottom sheet | Tester | Two screenshots | NOT RUN |
-| Storage denied: boot continues and host values are used | Tester + E2E | `e2e/phone.spec.ts:183,226`: boot succeeds and the storage notice is shown; manual screenshot/exception record not taken | PASS (E2E); manual NOT RUN |
+| Storage denied: boot continues, follow-host stays on, and the storage notice shows | Tester + E2E | `e2e/phone.spec.ts:183,226`: boot succeeds, follow-host stays checked, and the storage notice is shown; manual screenshot/exception record not taken | PASS (E2E); manual NOT RUN |
 | Keyboard-only Studio (setup and phone) | Tester | Keyboard sequence and screenshot | NOT RUN |
 | No horizontal overflow at folded/wide | Tester | Screenshots | NOT RUN |
 | macOS real host | Tester | Screenshot and exact OS label | NOT RUN |
@@ -70,7 +70,7 @@ macOS host, Windows/Linux, agent, or update gates, which remain NOT RUN.
   (fallback, no inline script, same-origin assets).
 - Setup loopback + Host + CSRF: `tests/server.test.ts:150,197,375,388,430` (403 cases and the valid
   request).
-- Setup-only pet asset route: `tests/server.test.ts:358,464`.
+- Setup-only pet asset route: `tests/server.test.ts:358` (its traversal case is at `:372`).
 - Host/version fields in state and WS: `tests/server.test.ts:228`, `tests/host.test.ts`.
 - Appearance normalization and sparse diff: `tests/appearance.test.ts`.
 - i18n EN/繁/简 parity: `tests/serverI18n.test.ts`, `tests/webI18n.test.ts`.
@@ -83,8 +83,8 @@ macOS host, Windows/Linux, agent, or update gates, which remain NOT RUN.
 - The phone writes only its sparse local override (`localStorage["pocketpet.look"]`) through
   `web/src/look/store.ts`; it never calls `/api/setup/look` or `/api/active-pet`.
 - The UI writes the host pet only from the setup Look card through `PUT /api/setup/look`
-  (`web/src/setup/main.ts:80`). E2E fixtures set it through the same setup API
-  (`e2e/phone.spec.ts:37`), and `e2e/prepare.mjs:17` seeds the temporary config directly.
+  (`web/src/setup/main.ts:85`; the `save` wrapper starts at `:80`). E2E fixtures set it through the same setup API
+  (`e2e/phone.spec.ts:25`), and `e2e/prepare.mjs:17` seeds the temporary config directly.
 - The server route remains at `src/server.ts:337`. Its only remaining callers are server integration
   tests: `tests/server.test.ts:78` (unknown pet rejected) and `tests/server.test.ts:488` (local pets
   listed and active pet switched). No E2E or UI caller remains.
