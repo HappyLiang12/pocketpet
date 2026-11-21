@@ -1,6 +1,8 @@
 import "./style.css";
 import { PetRenderer, type PetState } from "./sprite.js";
 import { connectState } from "./ws.js";
+import { isQuiet } from "./quiet.js";
+import { keepAwake } from "./wake.js";
 
 interface Session { key: string; agent: string; project: string; phase: string; tool?: string; startedAt: number; lastEventAt: number; }
 interface Snapshot { now: number; pet: string; sessions: Session[]; activePet: string | null; sleepAfterMinutes: number; quietHours: { start: string; end: string } | null; }
@@ -20,6 +22,7 @@ const canvas = byId<HTMLCanvasElement>("pet");
 const drawer = byId("drawer");
 const gear = byId("gear");
 const petList = byId("pet-list");
+const wakeInfo = byId("wake-info");
 const renderer = new PetRenderer(canvas);
 renderer.start();
 
@@ -135,7 +138,11 @@ function boot(): void {
   applyLayout();
   window.addEventListener("resize", applyLayout);
   renderClock();
-  setInterval(() => { renderClock(); renderSessions(); }, 1000);
+  setInterval(() => {
+    renderClock();
+    renderSessions();
+    document.body.classList.toggle("quiet", isQuiet(current?.quietHours ?? null, new Date()));
+  }, 1000);
 
   gear.addEventListener("click", () => {
     drawer.hidden = !drawer.hidden;
@@ -148,6 +155,9 @@ function boot(): void {
   connectState((snapshot) => applySnapshot(snapshot as Snapshot), (status) => {
     connEl.textContent = status === "open" ? "已連線" : status === "closed" ? "已斷線" : "連線中";
     connEl.dataset.state = status;
+  });
+  keepAwake((status) => {
+    wakeInfo.textContent = `螢幕長亮：${status}`;
   });
 }
 
