@@ -1,7 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
+import { DEFAULT_APPEARANCE } from "../src/appearance.js";
 
 const TOKEN = "e2e-token-0123456789";
 const ORIGIN = "http://127.0.0.1:7799";
+const SETUP_HEADERS = {
+  origin: ORIGIN,
+  "x-pocketpet-setup": "1",
+  "content-type": "application/json",
+};
 
 async function expectOk(response: Response): Promise<Response> {
   expect(response.ok, `HTTP ${response.status} for ${response.url}`).toBe(true);
@@ -16,12 +22,31 @@ async function postEvent(event: Record<string, unknown>): Promise<void> {
   }));
 }
 
+async function setHostLook(data: Record<string, unknown>): Promise<void> {
+  await expectOk(await fetch(`${ORIGIN}/api/setup/look`, {
+    method: "PUT",
+    headers: SETUP_HEADERS,
+    body: JSON.stringify(data),
+  }));
+}
+
+async function openTab(page: Page, tab: "live" | "look" | "about"): Promise<void> {
+  await page.locator(`#sheet-tabs [data-tab="${tab}"]`).click();
+}
+
+async function hostLook(): Promise<{ appearance: typeof DEFAULT_APPEARANCE; activePet: string | null }> {
+  return (await expectOk(await fetch(`${ORIGIN}/api/setup/look`))).json() as Promise<{
+    appearance: typeof DEFAULT_APPEARANCE;
+    activePet: string | null;
+  }>;
+}
+
 test("folded layout shows clock, pet and live chips", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
   await expect(page.locator("body")).toHaveAttribute("data-layout", "folded");
-  await expect(page.locator("#time")).toHaveText(/^\d{2}:\d{2}$/);
-  await expect(page.locator("#stage canvas")).toBeVisible();
+  await expect(page.locator("#stage [data-time]")).toHaveText(/^\d{2}:\d{2}$/);
+  await expect(page.locator("#stage [data-pet]")).toBeVisible();
   await postEvent({ v: 1, agent: "claude", sessionId: "e2e-folded", project: "demo", phase: "working", tool: "Edit", ts: Date.now() });
   await expect(page.locator("#chips .chip").filter({ hasText: "Claude Code" })).toContainText("工作中");
 });
@@ -34,21 +59,38 @@ test("wide layout shows session cards", async ({ page }) => {
   await expect(page.locator("#sessions .card").filter({ hasText: "wide-demo" })).toContainText("等待中");
 });
 
-test("loads the active pet sprite and switches pets from the drawer", async ({ page }) => {
+test("loads the host pet and switches the local pet without changing the host", async ({ page }) => {
+  await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet");
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
-  await page.locator("#gear").click();
+  await openTab(page, "look");
   await page.locator('#pet-list input[value="local:testpet2"]').check();
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet2");
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
+
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("pocketpet.look") ?? "null")) as {
+    followHost: boolean;
+    petId: string | null;
+  };
+  expect(stored.followHost).toBe(false);
+  expect(stored.petId).toBe("local:testpet2");
+  // A phone selection is local-only: the host pet stays where setup put it.
+  expect((await hostLook()).activePet).toBe("local:testpet");
+
+  // The local choice survives a reload and still does not touch the host.
+  await page.reload();
+  await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet2");
+  await openTab(page, "look");
+  await expect(page.locator("#follow-host")).not.toBeChecked();
+  expect((await hostLook()).activePet).toBe("local:testpet");
 });
 
 test("caps the pet gallery and filters it by name", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
-  await page.locator("#gear").click();
+  await openTab(page, "look");
   // 4 local pets + the 50-entry gallery window.
   await expect(page.locator("#pet-list input[name=pet]")).toHaveCount(54);
   await page.locator("#pet-search").fill("Gallery Pet 55");
@@ -59,35 +101,28 @@ test("caps the pet gallery and filters it by name", async ({ page }) => {
 test("shows a localized wake-lock status", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
+  await openTab(page, "about");
   await expect(page.locator("#wake-info")).toHaveText(/^螢幕長亮：(已啟用|待命|已拒絕|不支援|非安全連線.*)$/);
 });
 
 test("falls back to the blob when a pet spritesheet cannot decode", async ({ page }) => {
-  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "local:testpet" }),
-  }));
+  await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:testpet");
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
-  await page.locator("#gear").click();
+  await openTab(page, "look");
   await page.locator('#pet-list input[value="local:brokenpet"]').check();
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "fallback");
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "false");
   // The failed sheet must be discarded: the fallback blob is opaque, the previous fixture atlas is fully transparent.
-  await expect.poll(() => page.locator("#stage canvas").evaluate((canvas: HTMLCanvasElement) => canvas.getContext("2d")!.getImageData(60, 80, 1, 1).data[3])).toBeGreaterThan(0);
+  await expect.poll(() => page.locator("#stage [data-pet]").evaluate((canvas: HTMLCanvasElement) => canvas.getContext("2d")!.getImageData(60, 80, 1, 1).data[3])).toBeGreaterThan(0);
 });
 
 test("strips the pairing token after the cookie is set and survives a reload", async ({ page }) => {
-  // Earlier tests may leave the active pet on a broken fixture; pin a known-good
-  // pet so "the pet still loads" is meaningful.
-  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "local:testpet" }),
-  }));
+  // Earlier tests may leave a local pet selection; pin a known-good host pet so
+  // "the pet still loads" is meaningful.
+  await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
   await expect(page).toHaveURL(`${ORIGIN}/`);
@@ -106,7 +141,7 @@ test("strips the pairing token after the cookie is set and survives a reload", a
 test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
-  await page.locator("#gear").click();
+  await openTab(page, "live");
   const hint = page.locator("#install-hint");
   // Desktop Chromium is neither iOS Safari nor Android Chrome.
   await expect(hint).toBeVisible();
@@ -117,16 +152,12 @@ test("shows the add-to-home hint until it is dismissed", async ({ page }) => {
 
   // localStorage lives in the same context, so the dismissal survives a reload.
   await page.reload();
-  await page.locator("#gear").click();
+  await openTab(page, "live");
   await expect(page.locator("#install-hint")).toBeHidden();
 });
 
 test("keeps booting and dismisses the hint when storage is denied", async ({ page }) => {
-  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "local:testpet" }),
-  }));
+  await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
   // Private mode / enterprise policy can make the dismissal key throw. Other
   // keys keep working so the page can be inspected normally.
@@ -150,7 +181,7 @@ test("keeps booting and dismisses the hint when storage is denied", async ({ pag
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
 
   // A failed read defaults to visible rather than hiding the hint.
-  await page.locator("#gear").click();
+  await openTab(page, "live");
   const hint = page.locator("#install-hint");
   await expect(hint).toBeVisible();
 
@@ -166,21 +197,24 @@ test("switches the phone page between English and Simplified Chinese", async ({ 
   await page.goto(`/?token=${TOKEN}`);
   // The config sets locale zh-TW, so the first visit is Traditional Chinese.
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hant");
-  await page.locator("#gear").click();
+  await openTab(page, "about");
 
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator("#conn")).toHaveText("Connected");
   await expect(page.locator("#chips")).toContainText("Working");
   await expect(page.locator("#wake-info")).toHaveText(/^Screen awake:/);
   await expect(page.locator("#debug-lang")).toHaveText("English");
-  await expect(page.locator("#debug-host")).toContainText("127.0.0.1");
+  await expect(page.locator("#debug-host")).toHaveText(/^(macOS|Windows|Linux) \S+/);
+  await expect(page.locator("#debug-version")).toHaveText(/^\d+\.\d+\.\d+/);
   await expect(page.locator("#debug-secure")).toHaveText(/^(yes|no)$/);
   await expect(page.locator("#debug-pet")).not.toHaveText("");
+  await expect(page.locator("#sheet-tabs [data-tab=about]")).toHaveText("About");
   await expect(page.locator("#pet-search")).toHaveAttribute("placeholder", "Search pets…");
 
   await page.locator("#lang-select").selectOption("zh-Hans");
   await expect(page.locator("#conn")).toHaveText("已连接");
   await expect(page.locator("#chips")).toContainText("工作中");
+  await expect(page.locator("#sheet-tabs [data-tab=about]")).toHaveText("关于");
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
 
   // The choice is stored per device: a reload keeps Simplified Chinese even
@@ -203,9 +237,10 @@ test("draws scaled atlases with their real cell geometry", async ({ page }) => {
     return ((await response.json()) as { pet: string }).pet;
   }, { timeout: 6_000, intervals: [100, 250, 500] }).toBe("idle");
 
+  await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/?token=${TOKEN}`);
-  await page.locator("#gear").click();
+  await openTab(page, "look");
   await page.locator('#pet-list input[value="local:markerpet"]').check();
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-id", "local:markerpet");
   await expect(page.locator("#stage")).toHaveAttribute("data-pet-ready", "true");
@@ -213,14 +248,41 @@ test("draws scaled atlases with their real cell geometry", async ({ page }) => {
   // The 384x468 marker sheet paints each 48x52 cell with R = 40 + 20*row and
   // G = 40 + 20*col. The canvas centre sits in row 0, so R must be 40. The old
   // hard-coded 192x208 source rect would sample row 2 here and yield R = 80.
-  const pixel = await page.locator("#stage canvas").evaluate((canvas: HTMLCanvasElement) =>
+  const pixel = await page.locator("#stage [data-pet]").evaluate((canvas: HTMLCanvasElement) =>
     Array.from(canvas.getContext("2d")!.getImageData(96, 104, 1, 1).data));
   expect(pixel[0]).toBe(40);
   expect(pixel[3]).toBe(255);
+});
 
-  await expectOk(await fetch(`${ORIGIN}/api/active-pet?token=${TOKEN}`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: "local:testpet" }),
-  }));
+test("applies host appearance and can reset this phone", async ({ page }) => {
+  await setHostLook({
+    appearance: { ...DEFAULT_APPEARANCE, clock: { ...DEFAULT_APPEARANCE.clock, scale: 140 } },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  const scale = await page.locator("#stage").evaluate((element) => getComputedStyle(element).getPropertyValue("--clock-scale").trim());
+  expect(scale).toBe("1.4");
+  await openTab(page, "look");
+  await expect(page.locator("#follow-host")).toBeChecked();
+  await expect(page.locator("#open-studio")).toBeDisabled();
+  await page.locator("#follow-host").uncheck();
+  await page.locator("#reset-look").click();
+  await expect(page.locator("#follow-host")).toBeChecked();
+  // Resetting this phone restores follow-host; it must not write host state.
+  expect((await hostLook()).appearance.clock.scale).toBe(140);
+});
+
+// These tests mutate the shared host state. Restore the seeded defaults with
+// the setup API even when a test fails so later spec files do not inherit it.
+test.afterAll(async () => {
+  const api = await request.newContext({ baseURL: ORIGIN });
+  try {
+    const response = await api.put("/api/setup/look", {
+      headers: SETUP_HEADERS,
+      data: { appearance: DEFAULT_APPEARANCE, activePet: "local:testpet" },
+    });
+    expect(response.ok(), `phone look cleanup failed: HTTP ${response.status()}`).toBe(true);
+  } finally {
+    await api.dispose();
+  }
 });
