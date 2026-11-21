@@ -9,8 +9,8 @@
     <div id="app">
       <header id="top">
         <section id="clock"><div id="time">--:--</div><div id="date"></div></section>
-        <div id="conn" data-state="connecting">連線中</div>
-        <button id="gear" aria-label="設定">⚙</button>
+        <div id="conn" data-state="connecting">Connecting</div>
+        <button id="gear" aria-label="Settings" data-i18n-aria-label="gear.label">⚙</button>
       </header>
       <main id="main">
         <section id="stage"><canvas id="pet" width="192" height="208"></canvas></section>
@@ -18,14 +18,52 @@
       </main>
       <footer id="chips"></footer>
       <aside id="drawer" hidden>
-        <h2>設定</h2>
-        <input id="pet-search" type="search" placeholder="搜尋寵物…" autocomplete="off" />
+        <h2 id="drawer-title" data-i18n="drawer.title">Settings</h2>
+        <div id="lang-row">
+          <label id="lang-label" for="lang-select" data-i18n="drawer.language">Language</label>
+          <select id="lang-select">
+            <option value="en" lang="en">English</option>
+            <option value="zh-Hant" lang="zh-Hant">繁體中文</option>
+            <option value="zh-Hans" lang="zh-Hans">简体中文</option>
+          </select>
+        </div>
+        <input id="pet-search" type="search" placeholder="Search pets…" autocomplete="off" data-i18n-placeholder="drawer.search" />
         <div id="pet-list"></div>
-        <p id="wake-info">螢幕長亮：未知</p>
+        <p id="wake-info">Screen awake: unknown</p>
         <div id="install-hint" hidden>
           <p id="install-hint-text"></p>
-          <button id="install-hint-dismiss" type="button">知道了</button>
+          <button id="install-hint-dismiss" type="button" data-i18n="install.dismiss">Got it</button>
         </div>
+        <details id="debug" class="panel">
+          <summary data-i18n="debug.title">Debug</summary>
+          <dl id="debug-list">
+            <div class="debug-row"><dt data-i18n="debug.host">Host</dt><dd id="debug-host">—</dd></div>
+            <div class="debug-row"><dt data-i18n="debug.secure">Secure context</dt><dd id="debug-secure">—</dd></div>
+            <div class="debug-row"><dt data-i18n="debug.connection">Connection</dt><dd id="debug-conn">—</dd></div>
+            <div class="debug-row"><dt data-i18n="debug.wake">Wake</dt><dd id="debug-wake">—</dd></div>
+            <div class="debug-row"><dt data-i18n="debug.pet">Pet</dt><dd id="debug-pet">—</dd></div>
+            <div class="debug-row"><dt data-i18n="debug.language">Language</dt><dd id="debug-lang">—</dd></div>
+          </dl>
+        </details>
+        <details id="trouble" class="panel">
+          <summary data-i18n="trouble.title">Troubleshooting</summary>
+          <section class="trouble-item">
+            <h3 data-i18n="trouble.httpsTitle">ERR_TOO_MANY_RETRIES / ERR_SSL_PROTOCOL_ERROR</h3>
+            <p data-i18n="trouble.httpsBody">Chrome/Edge “Always use secure connections” or a VPN forces HTTPS on the HTTP address. Turn it off, try Safari/Firefox, or on iPhone disable VPN/iCloud Private Relay.</p>
+          </section>
+          <section class="trouble-item">
+            <h3 data-i18n="trouble.authTitle">unauthorized</h3>
+            <p data-i18n="trouble.authBody">You opened the cleaned / URL without the token. Scan the QR code or use the tokenized URL listed on /setup.</p>
+          </section>
+          <section class="trouble-item">
+            <h3 data-i18n="trouble.setupTitle">Setup page is Mac-only</h3>
+            <p data-i18n="trouble.setupBody">/setup only opens on the Mac; phones scan the QR code.</p>
+          </section>
+          <section class="trouble-item">
+            <h3 data-i18n="trouble.reachTitle">Cannot reach the Mac</h3>
+            <p data-i18n="trouble.reachBody">Confirm the phone is on the same WiFi/subnet (guest networks and AP isolation block it), or use USB: adb reverse tcp:7788 tcp:7788.</p>
+          </section>
+        </details>
       </aside>
     </div>
     <script type="module" src="/src/main.ts"></script>

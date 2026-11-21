@@ -1,13 +1,5 @@
 export type WakeStatus = "active" | "unsupported" | "denied" | "insecure" | "idle";
 
-export const WAKE_LABELS: Record<WakeStatus, string> = {
-  active: "已啟用",
-  idle: "待命",
-  denied: "已拒絕",
-  unsupported: "不支援",
-  insecure: "非安全連線，請設定螢幕逾時",
-};
-
 interface WakeLockSentinelLike {
   release(): Promise<void>;
   addEventListener(type: "release", listener: () => void): void;

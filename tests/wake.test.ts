@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WAKE_LABELS, keepAwake, type WakeStatus } from "../web/src/wake.js";
+import { keepAwake, type WakeStatus } from "../web/src/wake.js";
 
 function createSentinel() {
   const listeners: Array<() => void> = [];
@@ -71,18 +71,6 @@ const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
 };
-
-describe("WAKE_LABELS", () => {
-  it("localizes every wake status", () => {
-    expect(WAKE_LABELS).toEqual({
-      active: "已啟用",
-      idle: "待命",
-      denied: "已拒絕",
-      unsupported: "不支援",
-      insecure: "非安全連線，請設定螢幕逾時",
-    });
-  });
-});
 
 describe("keepAwake", () => {
   it("reports insecure contexts without requesting a lock", async () => {

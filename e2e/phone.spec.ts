@@ -159,6 +159,37 @@ test("keeps booting and dismisses the hint when storage is denied", async ({ pag
   await expect(hint).toBeHidden();
 });
 
+test("switches the phone page between English and Simplified Chinese", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // One live session so an English phase label has something to render.
+  await postEvent({ v: 1, agent: "claude", sessionId: "e2e-i18n", project: "i18n-demo", phase: "working", ts: Date.now() });
+  await page.goto(`/?token=${TOKEN}`);
+  // The config sets locale zh-TW, so the first visit is Traditional Chinese.
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hant");
+  await page.locator("#gear").click();
+
+  await page.locator("#lang-select").selectOption("en");
+  await expect(page.locator("#conn")).toHaveText("Connected");
+  await expect(page.locator("#chips")).toContainText("Working");
+  await expect(page.locator("#wake-info")).toHaveText(/^Screen awake:/);
+  await expect(page.locator("#debug-lang")).toHaveText("English");
+  await expect(page.locator("#debug-host")).toContainText("127.0.0.1");
+  await expect(page.locator("#debug-secure")).toHaveText(/^(yes|no)$/);
+  await expect(page.locator("#debug-pet")).not.toHaveText("");
+  await expect(page.locator("#pet-search")).toHaveAttribute("placeholder", "Search pets…");
+
+  await page.locator("#lang-select").selectOption("zh-Hans");
+  await expect(page.locator("#conn")).toHaveText("已连接");
+  await expect(page.locator("#chips")).toContainText("工作中");
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+
+  // The choice is stored per device: a reload keeps Simplified Chinese even
+  // though the browser locale is still zh-TW.
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await expect(page.locator("#conn")).toHaveText("已连接");
+});
+
 test("draws scaled atlases with their real cell geometry", async ({ page }) => {
   // Clear every session so the pet settles on idle row 0; flashes expire within ~3 s.
   const state = await (await expectOk(await fetch(`${ORIGIN}/api/state?token=${TOKEN}`))).json() as {
