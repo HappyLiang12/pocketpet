@@ -183,6 +183,21 @@ Token 每次 `fold-pet` 啟動可 rotate；重新印 QR 即撤銷舊連結。上
 | M3 | Qoder adapter（視 G1 結果）＋ 上傳 UI ＋ BT tethering 流程打磨 |
 | M4 | 長亮指引／夜間調暗／真機驗收 |
 
+### M1 實際交付與延後項目
+
+M1 只交付 bridge、Claude Code adapter、手機頁（摺合／展開）、本機／Petdex 寵物目錄、QR／doctor 與 G1 研究。以下條目明確延後至 M2–M4，M1 不實作，也不以自動測試假裝完成：
+
+- 靜置 N 分鐘後睡眠（sleep-after-idle）：延後至 M4 的真機／夜間體驗。
+- 舞台環境游走（`running-right`／`running-left` 與 agent 名 hash 決定方向）：延後至 M2。
+- 點寵物的本地反應：延後至 M4。
+- 抽屜的連線資訊與靜音時段控制（M1 只有寵物選擇與 Wake Lock 狀態）：延後至 M4。
+- session card 的「最後事件」欄位：延後至 M2。
+- token 輪替／撤銷 CLI：延後至 M3。
+- `init` 的預設寵物選擇：延後至 M2。
+- WebSocket 心跳：延後至 M2。
+
+其餘里程碑內容不變：Codex／OpenCode／Pi adapters 仍屬 M2；Qoder adapter、寵物上傳 UI 與藍牙 tethering 引導流程仍屬 M3。
+
 ## 風險與具名閘
 
 | 閘 | 風險 | 驗證方法 |

@@ -246,7 +246,7 @@ Rules:
 **Steps**
 
 1. Run `npx petdex install boba` and paste the output.
-2. Record where the pet landed: `ls -la ~/.codex/pets ~/.petdex/pets` (either path may exist; the Petdex docs say `~/.codex/pets`, while its GitHub README says `~/.petdex/pets`).
+2. Record where the pet landed: `ls -la ~/.fold-pet/pets ~/.codex/pets ~/.petdex/pets` (any may exist; the Petdex docs say `~/.codex/pets`, while its GitHub README says `~/.petdex/pets`).
 3. On the phone, open the gear drawer and confirm `boba` is listed under the local pets.
 4. Select `boba` and take a before/after screenshot of the sprite.
 
