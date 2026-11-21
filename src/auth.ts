@@ -4,6 +4,18 @@ export function isLoopback(address: string | undefined): boolean {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
 
+/**
+ * Host-header allowlist for the loopback `/setup` page. Only the loopback
+ * host forms on the actual listening port pass; a DNS-rebinding page that
+ * resolves a hostile name to 127.0.0.1 fails here even though its socket
+ * address is loopback.
+ */
+export function isLoopbackHost(host: string | undefined, port: number): boolean {
+  if (!host) return false;
+  const normalized = host.trim().toLowerCase();
+  return normalized === `127.0.0.1:${port}` || normalized === `localhost:${port}` || normalized === `[::1]:${port}`;
+}
+
 function cookieToken(req: IncomingMessage): string | null {
   const header = req.headers.cookie;
   if (!header) return null;

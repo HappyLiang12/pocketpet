@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +78,20 @@ describe("bridge server", () => {
   });
 });
 
+/** Raw node:http GET so the test controls the Host header (fetch always sets it from the URL). */
+function rawGet(path: string, headers: Record<string, string> = {}): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: "127.0.0.1", port: bridge.port, path, method: "GET", headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 describe("bridge server setup page", () => {
   it("renders loopback pairing links without a token using the actual port", async () => {
     const res = await fetch(`${base()}/setup`);
@@ -84,11 +99,29 @@ describe("bridge server setup page", () => {
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; style-src 'unsafe-inline'");
     const html = await res.text();
     expect(html).toContain("<svg");
     expect(html).toContain(`?token=${encodeURIComponent(bridge.config.token)}`);
     expect(html).toContain(`127.0.0.1:${bridge.port}/`);
     expect(bridge.port).not.toBe(bridge.config.port);
+  });
+
+  it("accepts the loopback Host forms with the actual listening port", async () => {
+    for (const host of ["127.0.0.1", "localhost", "LOCALHOST", "[::1]"]) {
+      const res = await rawGet("/setup", { host: `${host}:${bridge.port}` });
+      expect(res.status, `Host: ${host}`).toBe(200);
+      expect(res.headers["referrer-policy"], `Host: ${host}`).toBe("no-referrer");
+    }
+  });
+
+  it("refuses a non-loopback Host header (DNS rebinding)", async () => {
+    for (const host of ["evil.example", `evil.example:${bridge.port}`, `localhost:${bridge.port + 1}`]) {
+      const res = await rawGet("/setup", { host });
+      expect(res.status, `Host: ${host}`).toBe(403);
+      expect(res.body).not.toContain(bridge.config.token);
+    }
   });
 });
 

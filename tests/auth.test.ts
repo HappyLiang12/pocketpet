@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
-import { isAuthorized, isLoopback, setTokenCookie } from "../src/auth.js";
+import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "../src/auth.js";
 
 const req = (headers: Record<string, string>): IncomingMessage => ({ headers } as IncomingMessage);
 const url = (suffix = ""): URL => new URL(`http://127.0.0.1/api/state${suffix}`);
@@ -14,6 +14,28 @@ describe("isLoopback", () => {
   it("rejects everything else", () => {
     expect(isLoopback("192.168.1.5")).toBe(false);
     expect(isLoopback(undefined)).toBe(false);
+  });
+});
+
+describe("isLoopbackHost", () => {
+  it("accepts exactly the three loopback hosts on the listening port, case-insensitively", () => {
+    expect(isLoopbackHost("127.0.0.1:7788", 7788)).toBe(true);
+    expect(isLoopbackHost("localhost:7788", 7788)).toBe(true);
+    expect(isLoopbackHost("LOCALHOST:7788", 7788)).toBe(true);
+    expect(isLoopbackHost("LocalHost:7788", 7788)).toBe(true);
+    expect(isLoopbackHost("[::1]:7788", 7788)).toBe(true);
+  });
+
+  it("rejects hostnames, other ports, missing ports, and missing hosts", () => {
+    expect(isLoopbackHost("evil.example", 7788)).toBe(false);
+    expect(isLoopbackHost("evil.example:7788", 7788)).toBe(false);
+    expect(isLoopbackHost("localhost.evil.example:7788", 7788)).toBe(false);
+    expect(isLoopbackHost("localhost:9999", 7788)).toBe(false);
+    expect(isLoopbackHost("127.0.0.1:7788", 9099)).toBe(false);
+    expect(isLoopbackHost("localhost", 7788)).toBe(false);
+    expect(isLoopbackHost("[::1]", 7788)).toBe(false);
+    expect(isLoopbackHost("", 7788)).toBe(false);
+    expect(isLoopbackHost(undefined, 7788)).toBe(false);
   });
 });
 
