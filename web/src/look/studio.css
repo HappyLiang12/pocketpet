@@ -146,9 +146,46 @@ body.studio-open {
   position: relative;
 }
 
+.studio-stage [data-element]:focus {
+  outline: none;
+}
+
+.studio-stage [data-element]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
 .studio-stage [data-element][data-selected="true"] {
   outline: 1px dashed var(--focus);
   outline-offset: 4px;
+}
+
+.studio-stage [data-element][data-selected="true"]:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.studio-pet {
+  display: block;
+  line-height: 0;
+  touch-action: none;
+}
+
+.studio-pet > [data-pet] {
+  display: block;
+}
+
+.studio-stage[data-layout-mode="free"] .studio-pet {
+  position: absolute;
+  left: var(--studio-pet-x, 50%);
+  top: var(--studio-pet-y, 62%);
+  transform: translate(-50%, -50%);
+}
+
+.studio-stage[data-layout-mode="free"] .studio-pet > [data-pet] {
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
 }
 
 .studio-handle {
@@ -171,11 +208,23 @@ body.studio-open {
 
 .studio-sessions {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   width: 100%;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 9px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.studio-sessions[data-density="compact"] {
+  gap: 0;
+  font-size: 8.5px;
+  line-height: 1.2;
+}
+
+.studio-sample-label {
+  color: var(--muted);
+  font-style: italic;
 }
 
 .studio-stage[data-layout-mode="free"] .studio-sessions {
@@ -194,6 +243,65 @@ body.studio-open {
   border: 1px solid var(--line);
   border-radius: 12px 12px 0 0;
   background: var(--surface);
+}
+
+.studio-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-control);
+  color: var(--warning);
+  font-size: var(--fs-meta);
+}
+
+.studio-warning[hidden],
+.studio-confirm[hidden] {
+  display: none;
+}
+
+.studio-warning-text {
+  flex: 1 1 160px;
+}
+
+.studio-announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.studio-confirm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: min(92vw, 420px);
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  transform: translate(-50%, -50%);
+}
+
+.studio-confirm-text {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+}
+
+.studio-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .studio-toolbar {

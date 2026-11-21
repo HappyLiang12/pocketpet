@@ -118,6 +118,14 @@ const en = {
   "studio.saved": "Saved",
   "studio.saveFailed": "Save failed",
   "studio.close": "Close Studio",
+  "studio.selected": "Selected: {name}",
+  "studio.freeLayout": "Free layout",
+  "studio.overlap": "This element overlaps the sample session strip.",
+  "studio.moveUp": "Move up",
+  "studio.resetPosition": "Reset position",
+  "studio.discardTitle": "Discard unsaved changes?",
+  "studio.discard": "Discard",
+  "studio.keepEditing": "Keep editing",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -236,6 +244,14 @@ const zhHant: Record<MessageKey, string> = {
   "studio.saved": "已儲存",
   "studio.saveFailed": "儲存失敗",
   "studio.close": "關閉 Studio",
+  "studio.selected": "已選取：{name}",
+  "studio.freeLayout": "自由版面",
+  "studio.overlap": "此元素與工作階段樣本重疊。",
+  "studio.moveUp": "往上移",
+  "studio.resetPosition": "重設位置",
+  "studio.discardTitle": "放棄未儲存的變更？",
+  "studio.discard": "捨棄",
+  "studio.keepEditing": "繼續編輯",
 };
 
 const zhHans: Record<MessageKey, string> = {
@@ -352,6 +368,14 @@ const zhHans: Record<MessageKey, string> = {
   "studio.saved": "已保存",
   "studio.saveFailed": "保存失败",
   "studio.close": "关闭 Studio",
+  "studio.selected": "已选择：{name}",
+  "studio.freeLayout": "自由布局",
+  "studio.overlap": "此元素与会话示例重叠。",
+  "studio.moveUp": "上移",
+  "studio.resetPosition": "重置位置",
+  "studio.discardTitle": "放弃未保存的更改？",
+  "studio.discard": "放弃",
+  "studio.keepEditing": "继续编辑",
 };
 
 export const STRINGS: Record<Lang, Record<MessageKey, string>> = {
