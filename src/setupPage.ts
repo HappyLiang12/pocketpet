@@ -140,6 +140,7 @@ export function setupPageHtml(input: SetupPageInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${copy.htmlTitle}</title>
 ${cssLinks}
+<noscript><style>.copy-button { display: none; }</style></noscript>
 ${scriptTag}
 </head>
 <body>
@@ -147,11 +148,12 @@ ${scriptTag}
   <div class="wordmark">PocketPet</div>
   <div class="host-badge" data-host-os>${copy.hostThisComputer} · ${escapeHtml(host.os)}</div>
   <div class="version"><span class="label">${copy.hostVersion}</span> v${escapeHtml(host.bridgeVersion)}</div>
+  <div class="bridge-status"><span class="status-dot status-success" aria-hidden="true"></span>${copy.bridgeRunning} · ${copy.serviceRunning}</div>
   <nav class="language-links" aria-label="${copy.languageHeading}">
 ${langLinks}
   </nav>
 </header>
-<nav class="setup-tabs" aria-label="Sections">
+<nav class="setup-tabs" aria-label="${copy.navSections}">
   <a href="#pair">${copy.navPair}</a>
   <a href="#look">${copy.navLook}</a>
   <a href="#system">${copy.navSystem}</a>
@@ -238,7 +240,7 @@ ${localSection}
       <div class="system-row"><dt>${copy.logPathLabel}</dt><dd><code>${escapeHtml(logPath)}</code></dd></div>
     </dl>
     <p class="diagnostics" id="system-diagnostics">${diagnostics}</p>
-    <button type="button" class="button" data-copy-target="system-diagnostics">${copy.copyDiagnostics}</button>
+    <button type="button" class="button copy-button" data-copy-target="system-diagnostics">${copy.copyDiagnostics}</button>
 
     <h3>${copy.commandsHeading}</h3>
     <div class="command-row">

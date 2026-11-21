@@ -52,6 +52,17 @@ describe("setupPageHtml", () => {
     expect(html).toContain("Bridge version");
   });
 
+  it("hides copy controls without JavaScript and keeps URLs and commands selectable", () => {
+    const html = setupPageHtml(base);
+    expect(html).toContain("<noscript><style>.copy-button { display: none; }</style></noscript>");
+    expect(html).toContain('id="pair-lan-0"');
+    expect(html).toContain("http://192.168.1.5:7788/?token=tok");
+    expect(html).toContain('id="pair-usb-url"');
+    expect(html).toContain("adb reverse tcp:7788 tcp:7788");
+    expect(html).toContain('id="service-status-command"');
+    expect(html).toContain('id="service-install-command"');
+  });
+
   it("embeds the trusted QR SVG and every pairing URL", () => {
     const html = setupPageHtml(base);
     expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"><rect /></svg>');
@@ -84,6 +95,7 @@ describe("setupPageHtml", () => {
     expect(html).toContain('id="service-status-command"');
     expect(html).toContain('id="service-install-command"');
     expect(html).toContain('id="system-diagnostics"');
+    expect(html).toContain('class="button copy-button" data-copy-target="system-diagnostics"');
     const diagnostics = html.slice(html.indexOf('id="system-diagnostics"')).split("</p>")[0] ?? "";
     expect(diagnostics).toContain("7788");
     expect(diagnostics).toContain("Windows 10.0.22631");
@@ -91,6 +103,25 @@ describe("setupPageHtml", () => {
     expect(diagnostics).toContain("bridge.log");
     expect(diagnostics).not.toContain("?token=");
     expect(diagnostics).not.toContain("tok");
+  });
+
+  it("renders the USB copy target in every language", () => {
+    for (const lang of ["en", "zh-Hant", "zh-Hans"] as const) {
+      const html = setupPageHtml({ ...base, lang });
+      expect(html, `id ${lang}`).toContain('id="pair-usb-url"');
+      expect(html, `button ${lang}`).toContain('data-copy-target="pair-usb-url"');
+      expect(html, `url ${lang}`).toContain("http://127.0.0.1:7788/?token=tok");
+    }
+  });
+
+  it("renders a running login service and a header bridge status dot", () => {
+    const html = setupPageHtml({ ...base, serviceRunning: true });
+    expect(html).toContain(
+      '<div class="bridge-status"><span class="status-dot status-success" aria-hidden="true"></span>Bridge · Running</div>',
+    );
+    expect(html).toMatch(
+      /<div class="system-row"><dt>Login service<\/dt><dd><span class="status-dot status-success" aria-hidden="true"><\/span>Running<\/dd><\/div>/,
+    );
   });
 
   it("omits the QR panel and shows a QR-unavailable note when the SVG is empty", () => {
@@ -122,6 +153,19 @@ describe("setupPageHtml", () => {
     expect(setupPageHtml({ ...base, lang: "zh-Hans" })).toContain("三步完成配对");
     expect(setupPageHtml({ ...base, lang: "zh-Hans" })).toContain("这台电脑");
     expect(setupPageHtml({ ...base, lang: "zh-Hans" })).not.toContain("配對");
+  });
+
+  it("uses Setup titles and a localized tab nav label in all three languages", () => {
+    expect(setupPageHtml(base)).toContain("<title>PocketPet Setup</title>");
+    expect(setupPageHtml(base)).toContain('<nav class="setup-tabs" aria-label="Sections">');
+    const traditional = setupPageHtml({ ...base, lang: "zh-Hant" });
+    expect(traditional).toContain("<title>PocketPet 設定</title>");
+    expect(traditional).toContain('<h1 class="setup-title">PocketPet 設定</h1>');
+    expect(traditional).toContain('<nav class="setup-tabs" aria-label="區段">');
+    const simplified = setupPageHtml({ ...base, lang: "zh-Hans" });
+    expect(simplified).toContain("<title>PocketPet 设置</title>");
+    expect(simplified).toContain('<h1 class="setup-title">PocketPet 设置</h1>');
+    expect(simplified).toContain('<nav class="setup-tabs" aria-label="分区">');
   });
 });
 

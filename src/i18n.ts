@@ -98,6 +98,7 @@ const enSetup = {
   navPair: "Pair",
   navLook: "Look",
   navSystem: "System",
+  navSections: "Sections",
   lookHeading: "Look",
   lookEnableJavaScript: "Enable JavaScript to load the current look. The Studio editor is not available in this build yet.",
   lookClock: "Clock",
@@ -150,8 +151,8 @@ export type PairingCopy = { [K in keyof typeof enPairing]: string };
 export const setupCopy = {
   en: enSetup,
   "zh-Hant": {
-    htmlTitle: "PocketPet 配對",
-    heading: "PocketPet 配對",
+    htmlTitle: "PocketPet 設定",
+    heading: "PocketPet 設定",
     languageHeading: "語言",
     leadQr: "用手機相機掃描下面嘅 QR code，就可以喺瀏覽器打開 PocketPet。",
     leadNoQr:
@@ -196,6 +197,7 @@ export const setupCopy = {
     navPair: "配對",
     navLook: "外觀",
     navSystem: "系統",
+    navSections: "區段",
     lookHeading: "外觀",
     lookEnableJavaScript: "啟用 JavaScript 以載入目前外觀。此版本尚未提供 Studio 編輯器。",
     lookClock: "時鐘",
@@ -224,8 +226,8 @@ export const setupCopy = {
       "配對頁只會喺執行 PocketPet 嘅電腦開啟。手機唔需要開 <code>/setup</code>。配對後手機地址欄只剩 <code>/</code>，嗰個 URL 冇 token，唔好分享。要加新手機，請返嚟呢一頁掃 QR code。",
   },
   "zh-Hans": {
-    htmlTitle: "PocketPet 配对",
-    heading: "PocketPet 配对",
+    htmlTitle: "PocketPet 设置",
+    heading: "PocketPet 设置",
     languageHeading: "语言",
     leadQr: "用手机相机扫描下面的二维码，就可以在浏览器打开 PocketPet。",
     leadNoQr: "二维码暂时无法生成（服务器未能创建）。你仍然可以使用下面的局域网网址，或者通过 USB 连接打开 PocketPet。",
@@ -268,6 +270,7 @@ export const setupCopy = {
     navPair: "配对",
     navLook: "外观",
     navSystem: "系统",
+    navSections: "分区",
     lookHeading: "外观",
     lookEnableJavaScript: "启用 JavaScript 以加载当前外观。此版本尚未提供 Studio 编辑器。",
     lookClock: "时钟",
