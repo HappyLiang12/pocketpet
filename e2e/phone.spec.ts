@@ -59,6 +59,67 @@ test("wide layout shows session cards", async ({ page }) => {
   await expect(page.locator("#sessions .card").filter({ hasText: "wide-demo" })).toContainText("等待中");
 });
 
+test("short wide viewport keeps the whole clock and pet inside the stage", async ({ page }) => {
+  // Safari on the open iPhone Duo has a 951x537 CSS viewport after its chrome;
+  // the stage is only 321px tall.
+  await page.setViewportSize({ width: 951, height: 537 });
+  await page.goto(`/?token=${TOKEN}`);
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "wide");
+  await expect(page.locator("#stage")).toHaveAttribute("data-layout-mode", "stack");
+  await expect.poll(async () =>
+    page.locator("#stage").evaluate((stage) => {
+      const sr = stage.getBoundingClientRect();
+      const clock = stage.querySelector("[data-clock]")!.getBoundingClientRect();
+      const pet = stage.querySelector("[data-pet]")!.getBoundingClientRect();
+      return clock.top >= sr.top - 0.5 && pet.bottom <= sr.bottom + 0.5;
+    }), { timeout: 3_000 }).toBe(true);
+});
+
+test("fullscreen control enters and exits focus mode without the Fullscreen API", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/?token=${TOKEN}`);
+  await page.evaluate(() => {
+    Object.defineProperty(Document.prototype, "fullscreenEnabled", { configurable: true, get: () => false });
+    Object.defineProperty(document.documentElement, "requestFullscreen", { configurable: true, value: undefined });
+  });
+  const toggle = page.locator("#fullscreen-toggle");
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  const box = await toggle.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+
+  await toggle.click();
+  await expect(page.locator("body")).toHaveAttribute("data-focus", "true");
+  await expect(page.locator("#top")).toBeHidden();
+  await expect(page.locator("#sheet")).toBeHidden();
+  await expect(page.locator("#focus-exit")).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  await page.locator("#focus-exit").click();
+  await expect(page.locator("body")).toHaveAttribute("data-focus", "false");
+  await expect(page.locator("#top")).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("focus mode keeps the exit control clear of session cards", async ({ page }) => {
+  await page.setViewportSize({ width: 951, height: 537 });
+  await page.goto(`/?token=${TOKEN}`);
+  await page.evaluate(() => {
+    Object.defineProperty(Document.prototype, "fullscreenEnabled", { configurable: true, get: () => false });
+    Object.defineProperty(document.documentElement, "requestFullscreen", { configurable: true, value: undefined });
+  });
+  await postEvent({ v: 1, agent: "claude", sessionId: "e2e-focus-wide", project: "focus-demo", phase: "working", tool: "Edit", ts: Date.now() });
+  await expect(page.locator("#sessions .card").filter({ hasText: "focus-demo" })).toBeVisible();
+  await page.locator("#fullscreen-toggle").click();
+  await expect(page.locator("body")).toHaveAttribute("data-focus", "true");
+  const exitBox = await page.locator("#focus-exit").boundingBox();
+  const cardBox = await page.locator("#sessions .card").filter({ hasText: "focus-demo" }).boundingBox();
+  expect(exitBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.y).toBeGreaterThanOrEqual(exitBox!.y + exitBox!.height + 4);
+});
+
 test("loads the host pet and switches the local pet without changing the host", async ({ page }) => {
   await setHostLook({ activePet: "local:testpet" });
   await page.setViewportSize({ width: 390, height: 844 });

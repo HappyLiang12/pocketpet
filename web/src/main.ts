@@ -12,7 +12,7 @@ import { connectState, type ConnStatus } from "./ws.js";
 import { filterPets, type PetSummary } from "./catalog.js";
 import { isQuiet } from "./quiet.js";
 import { keepAwake, type WakeStatus } from "./wake.js";
-import { bindStage, applyStage, formatClock, resolveMotion, watchSystemAppearance } from "./look/stage.js";
+import { bindStage, applyStage, fitStage, formatClock, resolveMotion, watchSystemAppearance } from "./look/stage.js";
 import { canUseLocalStorage, readLocalLook, writeLocalLook } from "./look/store.js";
 import { openStudio } from "./look/studio.js";
 import {
@@ -86,6 +86,8 @@ const chipsEl = byId("chips");
 const sessionsEl = byId("sessions");
 const sheet = byId<HTMLElement>("sheet");
 const scrim = byId<HTMLElement>("scrim");
+const fullscreenToggle = byId<HTMLButtonElement>("fullscreen-toggle");
+const focusExit = byId<HTMLButtonElement>("focus-exit");
 const sheetHandle = byId<HTMLButtonElement>("sheet-handle");
 const tabList = byId<HTMLElement>("sheet-tabs");
 const tabs = [...document.querySelectorAll<HTMLButtonElement>("#sheet-tabs [data-tab]")];
@@ -208,6 +210,31 @@ function showTab(name: TabName, open = true): void {
 function closeSheet(): void {
   showTab("live", false);
   sheetHandle.focus();
+}
+
+function renderFocusMode(): void {
+  const active = document.body.dataset.focus === "true";
+  fullscreenToggle.setAttribute("aria-pressed", String(active));
+  fullscreenToggle.setAttribute("aria-label", t(lang, active ? "fullscreen.exit" : "fullscreen.enter"));
+  focusExit.setAttribute("aria-label", t(lang, "fullscreen.exit"));
+}
+
+function setFocusMode(active: boolean): void {
+  document.body.dataset.focus = active ? "true" : "false";
+  if (active) {
+    if (sheet.dataset.open === "true") showTab("live", false);
+    focusExit.focus();
+    if (typeof document.documentElement.requestFullscreen === "function") {
+      void document.documentElement.requestFullscreen().catch(() => undefined);
+    }
+  } else {
+    if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+    fullscreenToggle.focus();
+  }
+  renderFocusMode();
+  requestAnimationFrame(() => fitStage(stage));
 }
 
 function toggleSheet(): void {
@@ -406,6 +433,7 @@ function applyLook(force = false): void {
   if (!force && document.getElementById("studio")) return;
   const appearance = currentAppearance();
   applyStage(stage, appearance);
+  fitStage(stage);
   renderer.setReducedMotion(resolveMotion(appearance.motion) === "reduced");
   renderClock(appearance);
   renderSessions(appearance);
@@ -528,6 +556,7 @@ function applyLanguage(next: Lang, persist: boolean): void {
   showTab(activeTab, sheet.dataset.open === "true");
   stage.clock.setAttribute("aria-label", t(lang, "look.clock"));
   renderConnection();
+  renderFocusMode();
   renderLive();
   renderWake();
   const appearance = currentAppearance();
@@ -543,9 +572,13 @@ function boot(): void {
   const stageLayout = () => {
     const wide = window.matchMedia("(min-aspect-ratio: 1/1) and (min-width: 600px)").matches;
     document.body.dataset.layout = wide ? "wide" : "folded";
+    fitStage(stage);
   };
   stageLayout();
   window.addEventListener("resize", stageLayout);
+  if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(() => fitStage(stage)).observe(stage.stage);
+  }
   applyLanguage(initialLang(), false);
   watchSystemAppearance(() => applyLook());
   followHost.addEventListener("change", () => setFollowHost(followHost.checked));
@@ -593,11 +626,18 @@ function boot(): void {
   sheetHandle.addEventListener("click", toggleSheet);
   scrim.addEventListener("click", closeSheet);
   openLookButton.addEventListener("click", () => showTab("look"));
+  fullscreenToggle.addEventListener("click", () => setFocusMode(document.body.dataset.focus !== "true"));
+  focusExit.addEventListener("click", () => setFocusMode(false));
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     // The Studio overlay owns Escape while it is open: yielding here keeps one
     // Escape from dismissing both the topmost dialog and the sheet underneath.
     if (document.getElementById("studio")) return;
+    if (document.body.dataset.focus === "true") {
+      event.preventDefault();
+      setFocusMode(false);
+      return;
+    }
     if (sheet.dataset.open === "true") closeSheet();
   });
   petSearch.addEventListener("input", renderPetList);

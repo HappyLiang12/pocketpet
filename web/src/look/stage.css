@@ -18,7 +18,7 @@
   touch-action: none;
 }
 [data-time] {
-  font-size: calc(clamp(48px, 13vw, 132px) * var(--clock-scale, 1));
+  font-size: calc(clamp(48px, 13vw, 132px) * var(--clock-scale, 1) * var(--stage-fit, 1));
   font-weight: 300;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -30,7 +30,7 @@
   font-size: 13px;
 }
 [data-pet] {
-  width: calc(min(62vw, 240px) * var(--pet-scale, 1));
+  width: calc(min(62vw, 240px) * var(--pet-scale, 1) * var(--stage-fit, 1));
   height: auto;
   image-rendering: pixelated;
   touch-action: none;

@@ -9,7 +9,14 @@
     <div id="app">
       <header id="top">
         <div id="brand">PocketPet</div>
-        <div id="conn" data-state="connecting" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="conn-text">Connecting</span></div>
+        <div id="top-actions">
+          <button id="fullscreen-toggle" type="button" aria-label="Full screen" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5" />
+            </svg>
+          </button>
+          <div id="conn" data-state="connecting" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="conn-text">Connecting</span></div>
+        </div>
       </header>
       <main id="main">
         <section id="stage" data-stage>
@@ -93,6 +100,11 @@
           </section>
         </div>
       </aside>
+      <button id="focus-exit" type="button" aria-label="Exit full screen">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 4v5H4M15 20v-5h5M15 4v5h5M9 20v-5H4" />
+        </svg>
+      </button>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
