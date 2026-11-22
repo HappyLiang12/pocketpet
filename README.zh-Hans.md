@@ -4,11 +4,37 @@
 
 把折叠手机变成桌面时钟 + 实时 AI coding agent 宠物。PocketPet bridge 运行在托管 agent 的电脑上，收集 coding agent 的活动，通过 WiFi 推送到手机网页；无需安装 app、无需账号、无需云。
 
+## 界面
+
+截图使用 demo session 和名为 Momo 的自定义本地宠物；设置页的 QR 与配对网址已遮罩。
+
+<img src="docs/assets/setup-dashboard.png" alt="电脑上的 PocketPet 设置页，包含 Pair、Look、System 三个区域">
+
+<p align="center">
+  <img src="docs/assets/phone-folded.png" width="30%" alt="折叠手机：时钟、Momo 和实时 Claude Code session，下方是 Live/Look/About 面板">
+  <img src="docs/assets/phone-wide.png" width="36%" alt="展开手机：宽屏舞台、session card 和收起的底部面板">
+  <img src="docs/assets/phone-look.png" width="30%" alt="手机 Look 面板：跟随主机默认、主机摘要、Open Studio、重置此手机和宠物选择">
+</p>
+
+<p align="center">
+  <img src="docs/assets/phone-studio.png" width="32%" alt="手机上的 Direct Canvas Studio：时钟、Momo、sample session 和数字输入">
+</p>
+
+## 使用方法
+
+1. **启动 bridge。** 在 checkout 运行 `npm install && npm run build && npm link`，再运行 `pocketpet up`。bridge 需要保持运行；登录服务可选。
+2. **配对一次。** 在电脑打开 `/setup`，用手机相机扫描 QR，再选择「添加到主屏幕」。QR 可重复使用；不要分享只剩 `/` 的地址。
+3. **看状态。** 折叠时显示时钟和宠物；展开时加入宽屏舞台和 agent session cards。手机只显示，不控制 agent。
+4. **自定义。** 设置页 → Look → Open Studio 修改**主机默认**；手机 → Look → Open Studio 只修改**此手机**。可拖动/缩放时钟与宠物、输入精确数字、预览折叠/展开，然后保存。
+5. **选宠物。** 设置页 Look 设定主机默认；每部手机可跟随主机或选择本地宠物。「重置此手机」清除本地覆盖。
+6. **连接 agent。** 通过 `pocketpet up` 或 `pocketpet init` 明确同意后安装 hooks。Claude Code 已就绪；Qoder adapter 已包含，但真实 app hooks 验收为 NOT RUN。Codex/OpenCode/Pi 是后续适配器；agent 设置与更新 UI 不在本切片。
+7. **疑难排解。** 见下方「USB fallback」以及 [疑难解答](#疑难解答)（HTTPS-first / unauthorized / USB）。
+
 ## 要求
 
 - macOS，Node.js >= 20.6。当前 bridge 与登录服务仅支持 macOS；Windows/Linux 的 bridge 与服务支持是另一份规格。界面显示实际系统标签（例如 macOS），不假设运行平台。
 - 手机与运行 bridge 的电脑在同一 WiFi（不同网络可用 USB `adb reverse`）。
-- 已就绪的适配器是 Claude Code；Qoder 仍为本地/未发布。hooks 只会安装到已经存在的目录。
+- 当前包含 Claude Code 与 Qoder adapter；Qoder 的真实 app 验收为 NOT RUN。hooks 只会安装到已经存在的目录。
 
 ## 快速开始
 
@@ -79,9 +105,16 @@ adb reverse tcp:7788 tcp:7788
 
 ## 状态与平台范围
 
-当前：M1 + onboarding + Qoder adapter（本地/未发布）+ UIUX foundation。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd 登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
+当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd 登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
 
-Qoder 仍为本地/未发布，真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Windows/Linux 支持、Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。
+Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Windows/Linux 支持、Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。
+
+## 疑难解答
+
+- `ERR_TOO_MANY_RETRIES` / `ERR_SSL_PROTOCOL_ERROR`：手机浏览器强制 HTTPS（Chrome/Edge「始终使用安全连接」）或 VPN 代理拦截。关闭该设置，改用 Safari/Firefox，或关闭 VPN/iCloud Private Relay。局域网 bridge 只提供 HTTP；本地 HTTPS/tunnel 是后续选项。
+- `unauthorized`：打开了没有 token 的 `/`。扫描 QR，或使用 `/setup` 上列出的带 token 网址。
+- 设置页只在电脑上打开：`/setup` 只在运行 bridge 的电脑上打开；手机扫描 QR。
+- 完全连不上电脑：确认手机与电脑在同一 WiFi/subnet（访客网络与 AP 隔离会阻挡）；否则使用 USB `adb reverse`。
 
 ## 安全
 

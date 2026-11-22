@@ -17,15 +17,16 @@ PocketPet config was installed or modified for this record.
 
 ## Automated evidence at this head
 
-Code head under test: `cbbe36c` (`feat: add phone studio local overrides`). The documentation commit
-that adds this file changes no product code or tests.
+Code head under test: final branch head `1761e8c`. The automated evidence was first recorded at
+`cbbe36c` and re-run at `1761e8c`; the current counts are 315 unit tests and 30 E2E tests.
+This documentation commit changes no product code or tests.
 
 | Command | Result |
 |---|---|
-| `npm test` | PASS: 29 test files, 314 tests (4.53s) |
+| `npm test` | PASS: 29 test files, 315 tests |
 | `npm run typecheck` | PASS: `tsc -p tsconfig.json --noEmit` and `tsc -p tsconfig.web.json` |
 | `npm run build` | PASS: Vite web build and bridge `tsc` |
-| `npm run test:e2e` | PASS: 25 tests, 1 worker (8.1s): 17 phone + 8 setup |
+| `npm run test:e2e` | PASS: 30 tests, 1 worker (9.1s): 21 phone + 9 setup |
 
 The E2E run used the temporary `.tmp-e2e` home from `playwright.config.ts` (`POCKETPET_HOME=.tmp-e2e`),
 not a real config. No token was committed or retained in the repository; temporary run output was
