@@ -33,6 +33,37 @@ export function resolveMotion(
   return mode === "system" ? (prefersReduced() ? "reduced" : "full") : mode;
 }
 
+export function fitStage(stage: StageRefs): void {
+  const { stage: el, clock, pet } = stage;
+  if (el.dataset.layoutMode !== "stack") {
+    el.style.setProperty("--stage-fit", "1");
+    return;
+  }
+  const previous = el.style.getPropertyValue("--stage-fit") || "1";
+  el.style.setProperty("--stage-fit", "1");
+  const style = getComputedStyle(el);
+  const available =
+    el.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+  const gap = parseFloat(style.rowGap) || 0;
+  const time = clock.querySelector<HTMLElement>("[data-time]");
+  const date = clock.querySelector<HTMLElement>("[data-date]");
+  if (!time || !date || available <= 0 || el.clientWidth === 0) {
+    el.style.setProperty("--stage-fit", previous);
+    return;
+  }
+  const timeHeight = time.getBoundingClientRect().height;
+  const dateStyle = getComputedStyle(date);
+  const fixed = date.getBoundingClientRect().height + (parseFloat(dateStyle.marginTop) || 0) + gap;
+  const petHeight = pet.getBoundingClientRect().height;
+  const scalable = timeHeight + petHeight;
+  if (scalable <= 0) {
+    el.style.setProperty("--stage-fit", "1");
+    return;
+  }
+  const fit = Math.max(0.1, Math.min(1, (available - fixed - 1) / scalable));
+  el.style.setProperty("--stage-fit", fit >= 1 ? "1" : String(Math.floor(fit * 1000) / 1000));
+}
+
 export function applyStage(stage: StageRefs, appearance: Appearance): void {
   const root = stage.stage.ownerDocument.documentElement;
   root.dataset.theme = resolveTheme(appearance.theme);
