@@ -16,17 +16,43 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The PocketPet 
 - Loopback-only setup dashboard on the computer with Pair, Look, and System cards.
 - Host default look and host pet, with per-phone local overrides that never write host state.
 - One shared Direct Canvas Studio for the host and each phone: drag, resize, numeric fields, undo/redo, reset, and folded/wide preview.
-- Live states from Claude Code; the Qoder adapter remains local/unshipped, and Codex/OpenCode/Pi are next on the roadmap.
+- Live states from Claude Code and the included Qoder adapter; Qoder's real-app hook verification remains NOT RUN. Codex/OpenCode/Pi are next on the roadmap.
 - Petdex pets: gallery search, capped picker, local installs, custom `pet.json` + spritesheet.
 - One-command onboarding (`pocketpet up`), optional launchd login service, USB fallback.
 - English, Traditional Chinese, and Simplified Chinese UI; an in-page debug panel and connection troubleshooting.
 - Local-first: loopback events, per-install token, no telemetry.
 
+## Screens
+
+Screenshots use a demo session and a custom local pet named Momo. The setup QR and pairing URLs are redacted.
+
+<img src="docs/assets/setup-dashboard.png" alt="PocketPet setup dashboard on the computer with Pair, Look, and System cards">
+
+<p align="center">
+  <img src="docs/assets/phone-folded.png" width="30%" alt="Folded phone showing the clock, Momo, and a live Claude Code session above the Live/Look/About sheet">
+  <img src="docs/assets/phone-wide.png" width="36%" alt="Unfolded phone with the wide stage, a session card, and the collapsed bottom sheet">
+  <img src="docs/assets/phone-look.png" width="30%" alt="Phone Look sheet with Follow host defaults, the host summary, Open Studio, Reset this phone, and the pet picker">
+</p>
+
+<p align="center">
+  <img src="docs/assets/phone-studio.png" width="32%" alt="Direct Canvas Studio on the phone with clock, Momo, sample sessions, and numeric controls">
+</p>
+
+## How to use
+
+1. **Start the bridge.** From a checkout run `npm install && npm run build && npm link`, then `pocketpet up`. Keep the bridge running; the login service is optional.
+2. **Pair once.** Open `/setup` on the computer, scan the QR with the phone camera, and add the page to the home screen. The QR is reusable; do not share the cleaned `/` URL.
+3. **Read the room.** Folded shows the clock and pet; unfolded adds the wide stage and agent session cards. The phone is display-only and never controls agents.
+4. **Customize.** Setup → Look → Open Studio edits **host defaults**; phone → Look → Open Studio edits **this phone**. Drag or resize the clock/pet, type exact values, preview Folded/Wide, then Save.
+5. **Choose a pet.** Setup Look sets the host default; each phone can follow the host or pick a local pet. **Reset this phone** clears the local override.
+6. **Connect agents.** Install hooks with consent through `pocketpet up` or `pocketpet init`. Claude Code is ready; the Qoder adapter is included but its real-app hook gate is NOT RUN. Codex/OpenCode/Pi are next; agent setup and update UI are not in this slice.
+7. **Troubleshoot.** See [Troubleshooting](#troubleshooting) for HTTPS-first, unauthorized, and USB fallback.
+
 ## Requirements
 
 - macOS with Node.js >= 20.6. The current bridge and login service support macOS only; Windows and Linux bridge/service support is a separate specification. The UI shows the actual OS label and does not assume a platform.
 - Phone on the same WiFi as the computer (USB fallback below for different networks)
-- Claude Code for the ready adapter; the Qoder adapter remains local/unshipped. Hooks are installed only into roots that already exist.
+- Claude Code and/or Qoder; the Qoder adapter is included with its real-app gate NOT RUN. Hooks are installed only into roots that already exist.
 
 ## Quick start
 
@@ -102,7 +128,7 @@ The service runs `<node> <dist/cli.js> run --service`, which prints only `Pocket
 
 `pocketpet init` and `pocketpet up` wire Qoder user-level hooks into every existing root (`~/.qoder/settings.json` and `~/.qoder-cn/settings.json`) and never create a root that was not already there. The compiled CLI writes an absolute `<node> <dist/cli.js> hook qoder` command because the Qoder GUI may not inherit the shell `PATH`; a source (tsx) run falls back to the linked `pocketpet hook qoder`. Existing settings, foreign hooks, and `hooksConfig` are left untouched.
 
-Qoder remains local/unshipped: it is not presented as ready support. Verification gate: Qoder desktop 0.5.17 has not yet been observed executing a hand-written user-level hook. Its plugin hooks do execute, and the user-level path is documented, but the end-to-end payload is unverified. Install Qoder hooks with consent, run a Qoder task, and confirm the phone pet reacts before treating Qoder support as shipped. See `docs/research/qoder-events.md` and `docs/acceptance/m3-qoder-manual.md` (result: NOT RUN).
+The Qoder adapter is included in this release, but it is not presented as fully verified support: the real-app gate is NOT RUN. Qoder desktop 0.5.17 has not yet been observed executing a hand-written user-level hook. Its plugin hooks do execute, and the user-level path is documented, but the end-to-end payload is unverified. Install Qoder hooks with consent, run a Qoder task, and confirm the phone pet reacts before treating Qoder support as fully shipped. See `docs/research/qoder-events.md` and `docs/acceptance/m3-qoder-manual.md` (result: NOT RUN).
 
 ### Port
 
@@ -142,7 +168,7 @@ PocketPet scans three local roots in order: `~/.pocketpet/pets`, `~/.codex/pets`
 
 ## Status
 
-Current: M1 + onboarding + Qoder adapter (local/unshipped) + UIUX foundation. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd login service, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. The Qoder adapter remains local/unshipped, and its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md` and `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`.
+Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIUX foundation. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd login service, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. The Qoder adapter is included; its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md` and `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`.
 
 ## Troubleshooting
 
