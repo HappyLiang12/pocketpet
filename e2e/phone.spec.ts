@@ -315,10 +315,13 @@ test("draws scaled atlases with their real cell geometry", async ({ page }) => {
   // The 384x468 marker sheet paints each 48x52 cell with R = 40 + 20*row and
   // G = 40 + 20*col. The canvas centre sits in row 0, so R must be 40. The old
   // hard-coded 192x208 source rect would sample row 2 here and yield R = 80.
-  const pixel = await page.locator("#stage [data-pet]").evaluate((canvas: HTMLCanvasElement) =>
-    Array.from(canvas.getContext("2d")!.getImageData(96, 104, 1, 1).data));
-  expect(pixel[0]).toBe(40);
-  expect(pixel[3]).toBe(255);
+  // data-pet-ready flips after the image decodes, before the next RAF paints it;
+  // poll so the assertion cannot sample the previous fallback blob.
+  await expect.poll(async () => {
+    const pixel = await page.locator("#stage [data-pet]").evaluate((canvas: HTMLCanvasElement) =>
+      Array.from(canvas.getContext("2d")!.getImageData(96, 104, 1, 1).data));
+    return { r: pixel[0], a: pixel[3] };
+  }, { timeout: 5_000, intervals: [50, 100, 200] }).toEqual({ r: 40, a: 255 });
 });
 
 test("applies host appearance and can reset this phone", async ({ page }) => {
