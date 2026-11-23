@@ -504,6 +504,7 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
         // One UAC was already spent. Report the actionable command and keep the
         // bridge usable in the foreground; never claim the service is running.
         console.error("Continuing in the foreground; run `pocketpet service install` from an elevated shell later.");
+        console.error(`  ${elevatedServiceCommand(serviceConfig, "install")}`);
         fellBack = true;
       }
     }
@@ -541,17 +542,43 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
   return 0;
 }
 
-/** Fixed, token-free service error; the compiled-CLI refusal is safe to echo verbatim. */
-function serviceFailureMessage(action: "install" | "uninstall", error: unknown, label: string): string {
+/** PowerShell single-quoted literal for an exact, token-free elevated command. */
+function quoteServiceArg(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Exact command a user can paste into an elevated PowerShell. Carries no token. */
+export function elevatedServiceCommand(serviceConfig: ServiceConfig, action: "install" | "uninstall"): string {
+  return `& ${quoteServiceArg(serviceConfig.nodePath)} ${quoteServiceArg(serviceConfig.cliPath)} service ${action}`;
+}
+
+/**
+ * Fixed, token-free service error. Windows advice names the one elevated command
+ * to retry; other platforms keep the build/troubleshooting hint.
+ */
+function serviceFailureMessage(
+  action: "install" | "uninstall",
+  error: unknown,
+  label: string,
+  options: { windows?: boolean; command?: string } = {},
+): string {
   const message = error instanceof Error ? error.message : "";
   if (/cancel/i.test(message)) {
     return `Could not ${action} the bridge service (${label}). The elevation prompt was canceled.`;
   }
   const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
+  if (options.windows) {
+    const command = options.command ? ` Run this exact command in an elevated PowerShell: ${options.command}` : "";
+    return `Could not ${action} the bridge service (${label}). Windows needs one elevated ${action}.${command}${refusal}`;
+  }
   return `Could not ${action} the bridge service (${label}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
 }
 
-export type ServiceDeps = { platform?: Platform };
+export type ServiceDeps = {
+  platform?: Platform;
+  /** Test/selection hook: platform name that selects the Windows elevation advice. */
+  platformName?: NodeJS.Platform;
+};
 
 export async function runService(action: string | undefined, deps: ServiceDeps = {}): Promise<number> {
   if (action !== "install" && action !== "uninstall" && action !== "status") {
@@ -559,6 +586,7 @@ export async function runService(action: string | undefined, deps: ServiceDeps =
     return 2;
   }
   const target = deps.platform ?? platform;
+  const platformName = deps.platformName ?? process.platform;
   const home = pocketpetHome();
   let config: Config;
   try {
@@ -573,7 +601,12 @@ export async function runService(action: string | undefined, deps: ServiceDeps =
       await target.service.install(serviceConfig);
     } catch (error) {
       // The refusal message names the CLI path, never the token.
-      console.error(serviceFailureMessage("install", error, target.service.label));
+      console.error(
+        serviceFailureMessage("install", error, target.service.label, {
+          windows: platformName === "win32",
+          command: elevatedServiceCommand(serviceConfig, "install"),
+        }),
+      );
       return 1;
     }
     console.log(`Installed ${target.service.label}. The bridge starts at login and keeps running.`);
@@ -583,7 +616,12 @@ export async function runService(action: string | undefined, deps: ServiceDeps =
     try {
       await target.service.uninstall(serviceConfig);
     } catch (error) {
-      console.error(serviceFailureMessage("uninstall", error, target.service.label));
+      console.error(
+        serviceFailureMessage("uninstall", error, target.service.label, {
+          windows: platformName === "win32",
+          command: elevatedServiceCommand(serviceConfig, "uninstall"),
+        }),
+      );
       return 1;
     }
     console.log(`Removed ${target.service.label}.`);
