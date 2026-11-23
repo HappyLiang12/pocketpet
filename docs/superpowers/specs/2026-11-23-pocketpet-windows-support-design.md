@@ -118,11 +118,9 @@ existing runner shape and refusal to install a source `.ts` CLI.
 - Principal: current-user SID, `InteractiveToken`, `LeastPrivilege`.
 - Settings: hidden, ignore new instances, start when available, no execution
   time limit, restart up to three times at one-minute intervals.
-- Action: `cmd.exe /d /s /c "<home>\bridge-service.cmd"` with working directory
-  `home`.
-- Launcher: generated at `<home>/bridge-service.cmd`, current-user ACL, sets
-  `POCKETPET_HOME`, runs `<node> <dist/cli.js> run --service`, and redirects
-  stdout/stderr to `<home>/logs/bridge.log`.
+- Action: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "<home>\bridge-service.ps1"` with working directory `home`. The earlier `.cmd`/`cmd.exe /d /s /c` action is not used: it corrupts Unicode paths and `%` sequences on the OEM code page.
+- Launcher: generated at `<home>/bridge-service.ps1` as UTF-8 with a BOM, current-user ACL, sets `POCKETPET_HOME`, runs `<node> <dist/cli.js> run --service`, and redirects stdout/stderr to `<home>/logs/bridge.log`.
+- Task XML is written as UTF-16LE with a BOM before `schtasks /Create /XML`; a BOM-less UTF-16 file is rejected or mis-read by Task Scheduler.
 - Task XML, launcher, and log contain no token, QR, or pairing URL.
 - Install uses one elevated PowerShell helper to add/update firewall rules,
   register the task, and start it. The helper receives a token-free install
@@ -133,7 +131,7 @@ existing runner shape and refusal to install a source `.ts` CLI.
   the un-elevated process with current-user ACL, so a UAC elevation that
   requires a different admin account still exposes no user secret. The task
   principal remains the signed-in user. The Node CLI then waits for `/health`.
-- Status queries the scheduled task without elevation. A task that exists but
+- Status queries the scheduled task without elevation using the locale-independent `Get-ScheduledTask` State value (with `Get-ScheduledTaskInfo` for the last result). English `schtasks` text parsing is only a fallback, because `schtasks` labels are localized. A task that exists but
   is not running reports `running: false`; the setup System card uses the same
   status on Windows instead of `null`.
 - Uninstall ends and deletes the task, removes all PocketPet firewall rules,
@@ -221,7 +219,10 @@ order.
   launcher are verified directly.
 - On creation and on every update, Windows replaces the DACL with a single
   full-control ACE for the current user SID and removes inheritance and all
-  other entries. The owner remains the current user.
+  other entries. The owner remains the current user. The generated PowerShell
+  script builds a `.NET` `SecurityIdentifier` from the SID before creating the
+  ACE; the SID string is never passed to an overload that treats it as an
+  `NTAccount` name.
 - The operation is verified after writing. If verification fails, config
   creation/write fails closed: no token-bearing file is left in a weaker state.
 - Existing configs are tightened when loaded or before the service starts. If

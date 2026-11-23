@@ -18,7 +18,7 @@ Turn a foldable phone into a desk clock with a live AI-agent pet. The PocketPet 
 - One shared Direct Canvas Studio for the host and each phone: drag, resize, numeric fields, undo/redo, reset, and folded/wide preview.
 - Live states from Claude Code and the included Qoder adapter; Qoder's real-app hook verification remains NOT RUN. Codex/OpenCode/Pi are next on the roadmap.
 - Petdex pets: gallery search, capped picker, local installs, custom `pet.json` + spritesheet.
-- One-command onboarding (`pocketpet up`), optional launchd login service, USB fallback.
+- One-command onboarding (`pocketpet up`), optional login service (launchd on macOS, Task Scheduler on Windows), USB fallback.
 - English, Traditional Chinese, and Simplified Chinese UI; an in-page debug panel and connection troubleshooting.
 - Local-first: loopback events, per-install token, no telemetry.
 
@@ -50,8 +50,19 @@ Screenshots use a demo session and a custom local pet named Momo. The setup QR a
 
 ## Requirements
 
-- macOS with Node.js >= 20.6. The current bridge and login service support macOS only; Windows and Linux bridge/service support is a separate specification. The UI shows the actual OS label and does not assume a platform.
-- Phone on the same WiFi as the computer (USB fallback below for different networks)
+PocketPet is supported on macOS and Windows 11 x64. The bridge, phone page, Studio, and token model are the same everywhere; the login service, `.local` name, and config protection are per-OS.
+
+| Host | Support | Bridge, phone page, Studio | Agent hooks | Login service | `.local` | Config protection |
+| --- | --- | --- | --- | --- | --- | --- |
+| macOS (current) | Supported | Yes | Claude Code; Qoder wired, real-app gate NOT RUN | launchd LaunchAgent | Bonjour via the system responder and `scutil` | Directory 0700, files 0600 |
+| Windows 11 x64 | Supported | Yes | Claude Code; Qoder wired, real-app gate NOT RUN | Per-user Task Scheduler task at logon (hidden, least privilege) | Bundled mDNS responder; starts only when the PocketPet firewall rules exist | Current-user-only NTFS ACL on home, config, logs, and launcher |
+| Windows 10 22H2 x64 | Compatibility only; best-effort, not officially supported (gate NOT RUN) | Expected | Expected | Expected | Expected | Expected |
+| Windows on ARM | Not claimed | Not tested | Not tested | Not tested | Not tested | Not tested |
+| Linux | Best effort | Bridge only | Untested | None | None | POSIX mode bits only; no ACL promise |
+
+- Node.js >= 20.6.
+- Phone on the same WiFi as the computer (USB fallback below for different networks).
+- On Windows, service install and uninstall each need one UAC prompt, and the firewall rules are Private-profile only. Linux has no service, `.local`, or ACL support claim.
 - Claude Code and/or Qoder; the Qoder adapter is included with its real-app gate NOT RUN. Hooks are installed only into roots that already exist.
 
 ## Quick start
@@ -63,13 +74,36 @@ npm link          # gives a stable `pocketpet` command for Claude hooks and the 
 pocketpet up
 ```
 
+The same commands work in PowerShell on Windows 11 x64; see [Windows 11 quick start](#windows-11-quick-start).
+
 `pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]` is the one-command first run:
 
-1. Creates `~/.pocketpet/config.json` if it is missing (directory 0700, file 0600) and prints the path — never the token.
+1. Creates `~/.pocketpet/config.json` if it is missing (POSIX mode 0700/0600, or a current-user-only Windows ACL) and prints the path — never the token.
 2. Asks `Install Claude Code hooks? [Y/n]` when stdin is a terminal. `--yes` installs without asking, `--no-hooks` skips, and a non-TTY run skips with a reminder to run `pocketpet init` later. Existing settings and third-party hooks are preserved. If `~/.qoder` or `~/.qoder-cn` exists, it asks the same question for Qoder; an absent Qoder root is never created.
-3. Asks `Start bridge at login? [y/N]` (default no). Answering yes, or passing `--yes`, installs the `dev.pocketpet.bridge` LaunchAgent. Otherwise the bridge runs in the foreground until Ctrl+C; `--no-service` skips the question. If a bridge already answers on the configured port, `up` reprints the pairing details and reopens `/setup`.
+3. Asks `Start bridge at login? [y/N]` (default no). Answering yes, or passing `--yes`, installs the login service — `dev.pocketpet.bridge` on macOS or the hidden per-user `PocketPet Bridge` Task Scheduler task on Windows. Otherwise the bridge runs in the foreground until Ctrl+C; `--no-service` skips the question. If a bridge already answers on the configured port, `up` reprints the pairing details and reopens `/setup`.
 4. Prints every LAN URL plus a full-size terminal QR code (first IPv4 address by default) and the three phone steps.
 5. Opens `http://127.0.0.1:<port>/setup` in the computer's browser: a loopback-only setup dashboard with Pair, Look, and System cards. Pair shows the **IP** QR, the LAN URLs, and USB instructions; the page always shows the IP QR, so `--qr-host local` only changes the terminal QR. `--no-open` keeps the page closed.
+
+### Windows 11 quick start
+
+Run this in PowerShell from the checkout. No pre-elevated shell is needed; `pocketpet up` asks for elevation only for the login service.
+
+```powershell
+npm install
+npm run build
+npm link
+pocketpet up
+```
+
+- **One UAC per service action.** Accepting the `Start bridge at login?` prompt installs the per-user `PocketPet Bridge` Task Scheduler task at logon, adds Private-profile inbound firewall rules for TCP `<port>` and UDP 5353 (scoped to the installed `node.exe`), and starts the bridge. A reboot or sign-out/sign-in restarts it with no UAC. `pocketpet service install` and `pocketpet service uninstall` each need one UAC prompt too.
+- **UAC canceled or registration failed.** `pocketpet up` prints the exact elevated retry command, continues in the foreground, and does not claim the service is running. Standalone `pocketpet service install` exits 1.
+- **`--no-service`.** Skips the service and UAC. It also adds no firewall rules; unless rules from an earlier service install are still present, `.local` is not advertised and pairing uses the IP URL or USB fallback.
+- **Launcher and log.** The service runs a generated `%USERPROFILE%\.pocketpet\bridge-service.ps1` (PowerShell, UTF-8 with BOM) and appends to `%USERPROFILE%\.pocketpet\logs\bridge.log`. The task XML, launcher, and log contain no token, QR, or pairing URL. The home moves with `POCKETPET_HOME`.
+- **Status.** `pocketpet service status` exits 0 only while the task is running; a stopped or missing task exits 1. The setup System card shows the same state.
+- **Firewall.** Rules are inbound allow, Private profile only. Public and Domain networks are not opened automatically, so phone access and `.local` may fail there; `doctor` reports the reason. Adding/removing rules requires the same service elevation.
+- **`.local`.** The mDNS responder advertises `<computer-name>.local` only while the PocketPet firewall rules exist and a non-loopback IPv4 address is available. The name is lowercased and sanitized to `[a-z0-9-]`; a collision is not auto-renamed. See [`.local` address](#local-address) for network prerequisites and the IP/USB fallback.
+- **Config protection.** Home, `config.json`, logs, and the launcher are current-user-only by default. Administrators can take ownership, and backup tools that run as SYSTEM may not be able to read the file; see [SECURITY.md](SECURITY.md).
+- **Troubleshooting.** See the Windows items in [Troubleshooting](#troubleshooting). For the manual acceptance record and read-only probe, see `docs/acceptance/windows-support.md` and `scripts/windows-acceptance.ps1`.
 
 ### Setup dashboard
 
@@ -112,21 +146,30 @@ Drag or resize the clock and pet, or use numeric fields for exact values. The St
 
 ### `.local` address
 
-Next to each IP URL, `pocketpet up` prints the computer's Bonjour name from `scutil --get LocalHostName` (for example `http://my-computer.local:7788/?token=...`). It survives DHCP address changes, but depends on multicast DNS: some WiFi networks block it and Android resolution varies by version. The QR keeps using the IP by default; `--qr-host local` puts the `.local` URL in the terminal QR instead (the `/setup` page still renders the IP QR). The `.local` address is not the universal default until it is verified on both Android and iPhone.
+Next to each IP URL, `pocketpet up` prints a `.local` name when the host can advertise one:
+
+- **macOS** reads the computer's Bonjour name from `scutil --get LocalHostName` (for example `http://my-computer.local:7788/?token=...`). The system responder is always available.
+- **Windows 11** advertises the sanitized computer name through a bundled mDNS responder (for example `http://my-pc.local:7788/?token=...`). Advertisement starts only while the PocketPet firewall rules exist, so install the login service first; foreground `run` without those rules has no `.local` name. iOS resolves it through Bonjour; Android support varies by version and network.
+
+A `.local` name survives DHCP address changes, but it depends on multicast DNS: some WiFi networks, guest networks, AP isolation, VPNs, and corporate filters block it. Hostname collisions are not auto-renamed. The QR keeps using the IP by default; `--qr-host local` puts the `.local` URL in the terminal QR only when the name is live (the `/setup` page still renders the IP QR). The `.local` address is not the universal default until it is verified on both Android and iPhone, so keep the IP or USB fallback ready. On Windows, `pocketpet doctor` reports `PASS mdns` only while the responder is advertising.
 
 ### Login service
 
 ```bash
-pocketpet service install    # LaunchAgent dev.pocketpet.bridge; starts now and at every login
+pocketpet service install    # macOS: LaunchAgent dev.pocketpet.bridge; Windows: PocketPet Bridge task at logon
 pocketpet service status     # exit 0 + "running" line, exit 1 + "not running" line
-pocketpet service uninstall  # stops it and removes the plist
+pocketpet service uninstall  # stops it and removes the launchd job or scheduled task
 ```
 
-The service runs `<node> <dist/cli.js> run --service`, which prints only `PocketPet bridge listening on port N`. The token, URLs, and QR never reach the service log `~/.pocketpet/logs/bridge.log` (file 0600, directory 0700). Run `pocketpet up` again while the service is running to reprint the QR and reopen `/setup`. A source `.ts` entry point is refused; install the service from the built `dist/cli.js`.
+On macOS the service runs `<node> <dist/cli.js> run --service`, which prints only `PocketPet bridge listening on port N`. The token, URLs, and QR never reach the service log `~/.pocketpet/logs/bridge.log` (file 0600, directory 0700).
+
+On Windows the same command runs from a generated `bridge-service.ps1` launcher through the hidden per-user Task Scheduler task. Install and uninstall each need one UAC prompt; logon does not. The launcher, task XML, and log are token-free, and the log lives at `%USERPROFILE%\.pocketpet\logs\bridge.log` (or under `POCKETPET_HOME`). Uninstall leaves config, pets, cache, and logs in place. A source `.ts` entry point is refused on both platforms; install the service from the built `dist/cli.js`.
+
+Run `pocketpet up` again while the service is running to reprint the QR and reopen `/setup`.
 
 ### Qoder adapter
 
-`pocketpet init` and `pocketpet up` wire Qoder user-level hooks into every existing root (`~/.qoder/settings.json` and `~/.qoder-cn/settings.json`) and never create a root that was not already there. The compiled CLI writes an absolute `<node> <dist/cli.js> hook qoder` command because the Qoder GUI may not inherit the shell `PATH`; a source (tsx) run falls back to the linked `pocketpet hook qoder`. Existing settings, foreign hooks, and `hooksConfig` are left untouched.
+`pocketpet init` and `pocketpet up` wire Qoder user-level hooks into every existing root (`~/.qoder/settings.json` and `~/.qoder-cn/settings.json`) and never create a root that was not already there. The compiled CLI writes an absolute `<node> <dist/cli.js> hook qoder` command because the Qoder GUI may not inherit the shell `PATH`; a source (tsx) run falls back to the linked `pocketpet hook qoder`. On Windows the command is fully double-quoted (`"<node>" "<dist/cli.js>" hook qoder`) so paths with spaces survive, and rerunning `init`/`up` upgrades a stale bare entry instead of adding a duplicate. Existing settings, foreign hooks, and `hooksConfig` are left untouched.
 
 The Qoder adapter is included in this release, but it is not presented as fully verified support: the real-app gate is NOT RUN. Qoder desktop 0.5.17 has not yet been observed executing a hand-written user-level hook. Its plugin hooks do execute, and the user-level path is documented, but the end-to-end payload is unverified. Install Qoder hooks with consent, run a Qoder task, and confirm the phone pet reacts before treating Qoder support as fully shipped. See `docs/research/qoder-events.md` and `docs/acceptance/m3-qoder-manual.md` (result: NOT RUN).
 
@@ -140,7 +183,7 @@ The page requests the Screen Wake Lock when the browser allows it. Over plain HT
 
 ## USB fallback (different networks)
 
-macOS Monterey and later removed Bluetooth PAN/tethering, so Bluetooth is not a fallback on current macOS releases. When the phone and computer are on different networks, connect the phone by USB with debugging enabled and forward the bridge port:
+macOS Monterey and later removed Bluetooth PAN/tethering, so Bluetooth is not a fallback on current macOS releases. The same USB method works on Windows (install Android platform-tools and enable USB debugging). When the phone and computer are on different networks, connect the phone by USB with debugging enabled and forward the bridge port:
 
 ```bash
 adb reverse tcp:7788 tcp:7788
@@ -159,16 +202,16 @@ PocketPet scans three local roots in order: `~/.pocketpet/pets`, `~/.codex/pets`
 ## Commands
 
 - `pocketpet up` — first-run setup: config, hooks consent, optional login service, full-size QR, `/setup`
-- `pocketpet service install|uninstall|status` — manage the launchd login item
+- `pocketpet service install|uninstall|status` — manage the login item (launchd on macOS, Task Scheduler on Windows)
 - `pocketpet init` — create config and Claude/Qoder hooks (still available for scripted setup)
 - `pocketpet run` — start the bridge in the foreground and print the QR; auto-creates a missing config and reminds you that hooks need `init`
-- `pocketpet doctor` — check config, Claude/Qoder hooks, pets, port
+- `pocketpet doctor` — check config, hooks, pets, port, and on Windows also the config ACL, task, firewall content, and live `.local`
 - `pocketpet hook claude` — internal; called by Claude Code hooks
 - `pocketpet hook qoder` — internal; called by Qoder hooks
 
 ## Status
 
-Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIUX foundation. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd login service, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. The Qoder adapter is included; its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md` and `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`.
+Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIUX foundation + Windows 11 x64 support. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd (macOS) and Task Scheduler (Windows) login services, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. Windows 11 x64 is the official Windows host; Windows 10 22H2 is compatibility-only, and Windows on ARM/Linux remain best-effort without a support promise. The Qoder adapter is included; its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`, `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`, and `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`; real-machine Windows evidence lives in `docs/acceptance/windows-support.md`.
 
 ## Troubleshooting
 
@@ -176,10 +219,16 @@ Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIU
 - `unauthorized`: you opened the cleaned `/` URL without the token. Scan the QR or use the tokenized URL listed on `/setup`.
 - `Setup page opens on the computer` / `配對頁在電腦上開啟`: `/setup` only opens on the computer running the bridge; phones scan the QR.
 - Can't reach the computer at all: confirm the phone is on the same WiFi/subnet (guest networks and AP isolation block it); otherwise use USB `adb reverse`.
+- Windows: `pocketpet service install` was canceled or failed; re-run it from a normal PowerShell and accept the one UAC prompt, or keep using `--no-service` and the IP/USB URL. The retry command is printed by `pocketpet up`.
+- Windows phone access or `.local` fails: check that the network profile is Private (Settings → Network & Internet → Wi-Fi → network properties), that both PocketPet firewall rules pass `pocketpet doctor`, and that the router/VPN does not block multicast. Public/Domain profiles and AP isolation are intentionally not opened; use the IP URL or USB fallback.
+- Windows service does not start at logon: run `pocketpet service status` and `pocketpet doctor`, then inspect `%USERPROFILE%\.pocketpet\logs\bridge.log`. Reinstall with `pocketpet service install`; the task is a per-user logon task and needs an interactive sign-in.
+- Windows config unreadable by a backup tool: the home and config are current-user-only by default. Administrators can take ownership; run the backup as the signed-in user or exclude the path. See [SECURITY.md](SECURITY.md).
 
 ## Security
 
 Events are accepted only from loopback. The phone API requires the per-install token; the QR carries it once, the browser stores it as an HttpOnly cookie for one year (so a browser restart does not require a rescan), and the page removes `?token=` from the address bar after load. The token still appears in the terminal output and in the server-rendered QR and URL text on the loopback-only `/setup` page; setup APIs never return it, and the service log never contains it. Avoid sharing screenshots that show the QR, URLs, or setup page. `/setup` is loopback-only and Host-allowlisted; setup writes require a same-origin request with the setup header. The phone writes only its local override object — never the host appearance or host pet. `/setup` is not cached (`Cache-Control: no-store`). No cloud, no telemetry. Events contain agent/session/project/tool names only — never code, prompts, or outputs.
+
+On Windows, `%USERPROFILE%\.pocketpet` and its config, logs, and launcher are protected by a current-user-only ACL (inheritance removed, other entries deleted) and the bridge fails closed if protection cannot be verified. Administrators can take ownership, and SYSTEM-run backup tools may not be able to read the file. The Task Scheduler XML, launcher, and log contain no token; firewall rules are Private-profile only. See [SECURITY.md](SECURITY.md).
 
 ## Credits
 
