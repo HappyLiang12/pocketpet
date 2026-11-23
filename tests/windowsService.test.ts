@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandRunner, ServiceConfig } from "../src/platform/types.js";
 import {
   FIREWALL_MDNS,
@@ -8,17 +11,36 @@ import {
   firewallRemoveCommands,
   firewallRulesPresent,
 } from "../src/platform/windows/firewall.js";
-import { serviceStatusFromQuery, windowsLauncher, windowsTaskXml } from "../src/platform/windows/builders.js";
+import {
+  TASK_STATE_SCRIPT,
+  serviceStatusFromQuery,
+  serviceStatusFromState,
+  windowsLauncher,
+  windowsLauncherBytes,
+  windowsTaskXml,
+  windowsTaskXmlBytes,
+} from "../src/platform/windows/builders.js";
+import {
+  ELEVATION_CANCELLED,
+  WindowsServiceError,
+  createWindowsService,
+  defaultElevatedRunner,
+  elevatedWrapperScript,
+  installWindowsService,
+  windowsInstallScript,
+  windowsUninstallScript,
+  type WindowsDeps,
+} from "../src/platform/windows/service.js";
 
 const SID = "S-1-5-21-42";
-const cfg: ServiceConfig = {
+const windowsCfgFixture: ServiceConfig = {
   home: "C:\\Users\\happy\\.pocketpet",
   nodePath: "C:\\Program Files\\nodejs\\node.exe",
   cliPath: "C:\\app\\dist\\cli.js",
   port: 7788,
 };
 
-const launcherPath = "C:\\Users\\happy\\.pocketpet\\bridge-service.cmd";
+const launcherPath = "C:\\Users\\happy\\.pocketpet\\bridge-service.ps1";
 const logPath = "C:\\Users\\happy\\.pocketpet\\logs\\bridge.log";
 
 describe("Windows firewall builders", () => {
@@ -29,7 +51,7 @@ describe("Windows firewall builders", () => {
   });
 
   it("creates private TCP and mDNS rules without a token", () => {
-    const commands = firewallAddCommands(cfg.port, cfg.nodePath).join("\n");
+    const commands = firewallAddCommands(windowsCfgFixture.port, windowsCfgFixture.nodePath).join("\n");
     expect(commands).toContain("PocketPet Bridge TCP");
     expect(commands).toContain("PocketPet Bridge mDNS");
     expect(commands).toContain("protocol=TCP");
@@ -45,15 +67,15 @@ describe("Windows firewall builders", () => {
   });
 
   it("removes stale rules before adding the current inbound allow rules", () => {
-    const commands = firewallAddCommands(cfg.port, cfg.nodePath);
+    const commands = firewallAddCommands(windowsCfgFixture.port, windowsCfgFixture.nodePath);
 
     expect(commands).toHaveLength(4);
     expect(commands.slice(0, 2)).toEqual(firewallRemoveCommands());
     expect(commands[2]).toBe(
-      `netsh advfirewall firewall add rule name="${FIREWALL_TCP}" dir=in action=allow program="${cfg.nodePath}" protocol=TCP localport=${cfg.port} profile=private`,
+      `netsh advfirewall firewall add rule name="${FIREWALL_TCP}" dir=in action=allow program="${windowsCfgFixture.nodePath}" protocol=TCP localport=${windowsCfgFixture.port} profile=private`,
     );
     expect(commands[3]).toBe(
-      `netsh advfirewall firewall add rule name="${FIREWALL_MDNS}" dir=in action=allow program="${cfg.nodePath}" protocol=UDP localport=5353 profile=private`,
+      `netsh advfirewall firewall add rule name="${FIREWALL_MDNS}" dir=in action=allow program="${windowsCfgFixture.nodePath}" protocol=UDP localport=5353 profile=private`,
     );
     // Private profile only: no public/domain scope, no remote-address wildcard broadening.
     expect(commands.join("\n")).not.toMatch(/profile=(public|domain|any)/i);
@@ -68,7 +90,7 @@ describe("Windows firewall builders", () => {
   });
 
   it("defaults the program scope to the running Node executable", () => {
-    const addCommands = firewallAddCommands(cfg.port);
+    const addCommands = firewallAddCommands(windowsCfgFixture.port);
     expect(addCommands[2]).toContain(`program="${process.execPath}"`);
     expect(addCommands[3]).toContain(`program="${process.execPath}"`);
   });
@@ -103,32 +125,43 @@ describe("Windows firewall builders", () => {
   });
 });
 
-describe("Windows launcher", () => {
-  it("writes a CRLF launcher that sets the home and appends service output to bridge.log", () => {
-    const launcher = windowsLauncher(cfg);
+describe("Windows PowerShell launcher", () => {
+  it("sets the home, appends every service stream to bridge.log, and exits with the child code", () => {
+    const launcher = windowsLauncher(windowsCfgFixture);
     expect(launcher.split("\r\n")).toEqual([
-      "@echo off",
-      `set "POCKETPET_HOME=${cfg.home}"`,
-      `"${cfg.nodePath}" "${cfg.cliPath}" run --service >> "${logPath}" 2>&1`,
+      "$ErrorActionPreference = 'Stop'",
+      `$env:POCKETPET_HOME = 'C:\\Users\\happy\\.pocketpet'`,
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\app\\dist\\cli.js' run --service *>> 'C:\\Users\\happy\\.pocketpet\\logs\\bridge.log'`,
+      "exit $LASTEXITCODE",
     ]);
-    expect(launcher).not.toMatch(/token|pairing|\/setup|\?t=/i);
+    expect(launcher).not.toMatch(/token=|pairing|\/setup|\?t=/i);
+    expect(launcher).not.toContain(".cmd");
   });
 
-  it("quotes paths with spaces and keeps Unicode intact", () => {
+  it("writes the launcher as UTF-8 with a byte-order mark", () => {
+    const bytes = windowsLauncherBytes(windowsCfgFixture);
+
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(bytes.subarray(3).toString("utf8")).toBe(windowsLauncher(windowsCfgFixture));
+  });
+
+  it("quotes spaces, Unicode, and apostrophes as PowerShell literals", () => {
     const launcher = windowsLauncher({
-      ...cfg,
-      home: "C:\\Users\\口 袋\\.pocketpet",
+      ...windowsCfgFixture,
+      home: "C:\\Users\\O'Brien 口 袋\\.pocketpet",
       nodePath: "C:\\Program Files\\nodejs\\node.exe",
       cliPath: "C:\\应用 目录\\dist\\cli.js",
     });
-    expect(launcher).toContain('"C:\\Program Files\\nodejs\\node.exe" "C:\\应用 目录\\dist\\cli.js" run --service');
-    expect(launcher).toContain(`>> "C:\\Users\\口 袋\\.pocketpet\\logs\\bridge.log" 2>&1`);
+    expect(launcher).toContain(
+      `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\应用 目录\\dist\\cli.js' run --service *>> 'C:\\Users\\O''Brien 口 袋\\.pocketpet\\logs\\bridge.log'`,
+    );
+    expect(launcher).toContain(`$env:POCKETPET_HOME = 'C:\\Users\\O''Brien 口 袋\\.pocketpet'`);
   });
 });
 
 describe("Windows Task Scheduler XML", () => {
   it("writes a hidden logon task for the current user with least privilege and restart", () => {
-    const xml = windowsTaskXml(cfg, SID);
+    const xml = windowsTaskXml(windowsCfgFixture, SID);
 
     expect(xml).toContain('<?xml version="1.0" encoding="UTF-16"?>');
     expect(xml).toMatch(/<LogonTrigger>\s*<Enabled>true<\/Enabled>\s*<UserId>S-1-5-21-42<\/UserId>\s*<\/LogonTrigger>/);
@@ -142,40 +175,79 @@ describe("Windows Task Scheduler XML", () => {
     expect(xml).toContain("<Hidden>true</Hidden>");
   });
 
-  it("runs the launcher through cmd.exe with the launcher path and working directory", () => {
-    const xml = windowsTaskXml(cfg, SID);
+  it("runs the PowerShell launcher in a hidden non-interactive process", () => {
+    const xml = windowsTaskXml(windowsCfgFixture, SID);
 
-    expect(xml).toContain("<Command>cmd.exe</Command>");
-    expect(xml).toContain(`<Arguments>/d /s /c &quot;&quot;${launcherPath}&quot;&quot;</Arguments>`);
-    expect(xml).toContain(`<WorkingDirectory>${cfg.home}</WorkingDirectory>`);
-    expect(xml).toContain("bridge-service.cmd");
-    expect(xml).toContain("PocketPet Bridge");
+    expect(xml).toContain("<Command>powershell.exe</Command>");
+    expect(xml).toContain(
+      `<Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;${launcherPath}&quot;</Arguments>`,
+    );
+    expect(xml).toContain(`<WorkingDirectory>${windowsCfgFixture.home}</WorkingDirectory>`);
+    expect(xml).toContain("bridge-service.ps1");
+    expect(xml).not.toContain("cmd.exe");
+    expect(xml).not.toContain("/d /s /c");
+    expect(xml).not.toContain("bridge-service.cmd");
     // InteractiveToken is a logon type, not a credential.
     expect(xml).not.toMatch(/token=|pairing|\/setup|\?t=/i);
   });
 
-  it("keeps a home path with spaces quoted through the /s quote stripping", () => {
-    const spacedHome = "C:\\Users\\Happy Liang\\.pocketpet";
-    const xml = windowsTaskXml({ ...cfg, home: spacedHome }, SID);
+  it("keeps a home path with spaces and Unicode quoted as one launcher argument", () => {
+    const spacedHome = "C:\\Users\\Happy Liang 口 袋\\.pocketpet";
+    const xml = windowsTaskXml({ ...windowsCfgFixture, home: spacedHome }, SID);
 
-    // /s strips the outer pair, so the inner pair must survive to keep the
-    // spaced launcher path a single argument for cmd.exe.
     expect(xml).toContain(
-      `<Arguments>/d /s /c &quot;&quot;${spacedHome}\\bridge-service.cmd&quot;&quot;</Arguments>`,
+      `<Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;${spacedHome}\\bridge-service.ps1&quot;</Arguments>`,
     );
   });
 
+  it("writes the task XML as UTF-16LE with a byte-order mark", () => {
+    const xml = windowsTaskXml(windowsCfgFixture, SID);
+    const bytes = windowsTaskXmlBytes(xml);
+
+    expect([...bytes.subarray(0, 2)]).toEqual([0xff, 0xfe]);
+    expect(bytes.length).toBe(2 + Buffer.byteLength(xml, "utf16le"));
+    expect(bytes.subarray(2).toString("utf16le")).toBe(xml);
+    // A BOM-less UTF-16LE file is not acceptable for schtasks /XML.
+    expect(bytes.length).toBeGreaterThan(Buffer.byteLength(xml, "utf16le"));
+  });
+
   it("XML-escapes the SID, home, and launcher path", () => {
-    const xml = windowsTaskXml({ ...cfg, home: 'C:\\Users\\o\'brien & <home> "q"' }, "S-1-5-21-<42>");
+    const xml = windowsTaskXml({ ...windowsCfgFixture, home: 'C:\\Users\\o\'brien & <home> "q"' }, "S-1-5-21-<42>");
     expect(xml).toContain("S-1-5-21-&lt;42&gt;");
     expect(xml).toContain("o&apos;brien &amp; &lt;home&gt; &quot;q&quot;");
-    expect(xml).toContain("o&apos;brien &amp; &lt;home&gt; &quot;q&quot;\\bridge-service.cmd");
+    expect(xml).toContain("o&apos;brien &amp; &lt;home&gt; &quot;q&quot;\\bridge-service.ps1");
     expect(xml).not.toContain("<home>");
     expect(xml).not.toContain("o'brien");
   });
 });
 
-describe("serviceStatusFromQuery", () => {
+describe("serviceStatusFromState", () => {
+  it("uses a locale-independent PowerShell state query", () => {
+    expect(TASK_STATE_SCRIPT).toBe(
+      "Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State",
+    );
+    expect(TASK_STATE_SCRIPT).not.toMatch(/TaskName:|Status:|Scheduled Task State:/);
+    expect(TASK_STATE_SCRIPT).not.toContain("schtasks");
+  });
+
+  it("maps Running to installed and running", () => {
+    expect(serviceStatusFromState("Running\r\n")).toEqual({ installed: true, running: true });
+    expect(serviceStatusFromState("RUNNING\n")).toEqual({ installed: true, running: true });
+  });
+
+  it("maps Ready, Disabled, and other states to installed and stopped", () => {
+    for (const state of ["Ready", "Disabled", "Queued", "Unknown"]) {
+      expect(serviceStatusFromState(`${state}\r\n`), state).toEqual({ installed: true, running: false });
+    }
+  });
+
+  it("maps empty output to a missing task", () => {
+    expect(serviceStatusFromState("")).toEqual({ installed: false, running: false });
+    expect(serviceStatusFromState("\r\n")).toEqual({ installed: false, running: false });
+  });
+});
+
+describe("serviceStatusFromQuery fallback", () => {
   const runningQuery = [
     "Folder: \\",
     "HostName:                             HAPPY-PC",
@@ -224,5 +296,297 @@ describe("serviceStatusFromQuery", () => {
       installed: true,
       running: false,
     });
+  });
+});
+
+type Recorder = {
+  deps: WindowsDeps;
+  scripts: string[];
+  runs: Array<{ command: string; args: string[] }>;
+  order: string[];
+};
+
+function fakeDeps(options: { elevatedStatus?: number; state?: string } = {}): Recorder {
+  const scripts: string[] = [];
+  const runs: Array<{ command: string; args: string[] }> = [];
+  const order: string[] = [];
+  const deps: WindowsDeps = {
+    run: (command, args) => {
+      runs.push({ command, args });
+      const text = args.join(" ");
+      if (text.includes("WindowsIdentity")) return { status: 0, stdout: `${SID}\r\n`, stderr: "" };
+      if (text.includes("Get-ScheduledTask")) return { status: 0, stdout: options.state ?? "Running\r\n", stderr: "" };
+      return { status: 0, stdout: "", stderr: "" };
+    },
+    elevated: async (script) => {
+      scripts.push(script);
+      return { status: options.elevatedStatus ?? 0, stdout: "", stderr: "" };
+    },
+    protectLogs: (home) => order.push(`logs:${home}`),
+    protectFile: (path) => order.push(`file:${path}`),
+  };
+  return { deps, scripts, runs, order };
+}
+
+describe("Windows service transaction", () => {
+  let root: string;
+  let cfg: ServiceConfig;
+  let launcher: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "pocketpet-winsvc-"));
+    mkdirSync(join(root, "dist"), { recursive: true });
+    writeFileSync(join(root, "dist", "cli.js"), "// compiled bridge cli\n");
+    cfg = {
+      home: join(root, "home"),
+      nodePath: process.execPath,
+      cliPath: join(root, "dist", "cli.js"),
+      port: 7788,
+    };
+    launcher = join(cfg.home, "bridge-service.ps1");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("protects logs, writes the launcher, then adds firewall rules, registers, and starts the task", async () => {
+    const { deps, scripts, order } = fakeDeps();
+
+    await installWindowsService(cfg, deps);
+
+    expect(order).toEqual([`logs:${cfg.home}`, `file:${launcher}`]);
+    expect(existsSync(launcher)).toBe(true);
+    const launcherBytes = readFileSync(launcher);
+    expect([...launcherBytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+
+    expect(scripts).toHaveLength(1);
+    const script = scripts[0]!;
+    const staleDeletes = script.indexOf("'delete' 'rule'");
+    const firewallAdds = script.indexOf("'add' 'rule'");
+    const create = script.indexOf(`/Create /TN 'PocketPet Bridge' /XML $xmlPath /F`);
+    const run = script.indexOf(`/Run /TN 'PocketPet Bridge'`);
+    expect(staleDeletes).toBeGreaterThanOrEqual(0);
+    expect(staleDeletes).toBeLessThan(firewallAdds);
+    expect(firewallAdds).toBeLessThan(create);
+    expect(create).toBeLessThan(run);
+    expect(script).toContain("$env:TEMP");
+    expect(script).toContain("Remove-Item -LiteralPath $xmlPath");
+    expect(script).toContain("throw 'firewall rule update failed'");
+    expect(script).toContain(`'name=${FIREWALL_TCP}'`);
+    expect(script).toContain(`'name=${FIREWALL_MDNS}'`);
+    expect(script).toContain(`'localport=${cfg.port}'`);
+    expect(script).toContain(`'program=${cfg.nodePath}'`);
+  });
+
+  it("embeds task XML as UTF-16LE with a BOM and no token", async () => {
+    const { deps, scripts } = fakeDeps();
+
+    await installWindowsService(cfg, deps);
+
+    const script = scripts[0]!;
+    const encoded = script.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/)?.[1];
+    expect(encoded, "install script embeds the task XML").toBeTruthy();
+    const bytes = Buffer.from(encoded!, "base64");
+    expect([...bytes.subarray(0, 2)]).toEqual([0xff, 0xfe]);
+    expect(bytes.subarray(2).toString("utf16le")).toBe(windowsTaskXml(cfg, SID));
+    expect(script).not.toMatch(/token=|pairing|\?t=/i);
+  });
+
+  it("rolls back firewall rules and the task inside the elevation before deleting the launcher", async () => {
+    const { deps, scripts } = fakeDeps({ elevatedStatus: 1 });
+
+    await expect(installWindowsService(cfg, deps)).rejects.toThrow(/elevated install failed \(exit 1\)/);
+
+    expect(existsSync(launcher)).toBe(false);
+    expect(scripts).toHaveLength(1);
+    const script = scripts[0]!;
+    const catchIndex = script.indexOf("} catch {");
+    expect(catchIndex).toBeGreaterThan(0);
+    const rollback = script.slice(catchIndex);
+    const ruleRemovals = rollback.indexOf("'delete' 'rule'");
+    const taskRemoval = rollback.indexOf("/Delete");
+    expect(ruleRemovals).toBeGreaterThanOrEqual(0);
+    expect(taskRemoval).toBeGreaterThanOrEqual(0);
+    expect(ruleRemovals).toBeLessThan(taskRemoval);
+    expect(rollback).toContain(FIREWALL_TCP);
+    expect(rollback).toContain(FIREWALL_MDNS);
+    expect(rollback).toContain("/TN 'PocketPet Bridge' /F");
+  });
+
+  it("surfaces UAC cancellation distinctly and leaves no launcher", async () => {
+    const { deps } = fakeDeps({ elevatedStatus: ELEVATION_CANCELLED });
+    expect(ELEVATION_CANCELLED).toBe(1223);
+
+    let caught: unknown;
+    try {
+      await installWindowsService(cfg, deps);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(WindowsServiceError);
+    const failure = caught as WindowsServiceError;
+    expect(failure.cancelled).toBe(true);
+    expect(failure.exitCode).toBe(ELEVATION_CANCELLED);
+    expect(failure.message).toMatch(/cancel/i);
+    expect(failure.message).not.toMatch(/token=|pairing|\?t=/i);
+    expect(existsSync(launcher)).toBe(false);
+  });
+
+  it("refuses a source or missing CLI and a missing Node binary before elevation", async () => {
+    for (const override of [
+      { cliPath: join(root, "src", "cli.ts") },
+      { cliPath: join(root, "dist", "missing.js") },
+      { nodePath: join(root, "missing-node.exe") },
+    ]) {
+      const { deps, scripts } = fakeDeps();
+      await expect(installWindowsService({ ...cfg, ...override }, deps), JSON.stringify(override)).rejects.toThrow(
+        /compiled CLI|node/i,
+      );
+      expect(scripts, JSON.stringify(override)).toHaveLength(0);
+      expect(existsSync(launcher), JSON.stringify(override)).toBe(false);
+    }
+  });
+
+  it("rejects an invalid port before elevation and removes the launcher", async () => {
+    const { deps, scripts } = fakeDeps();
+
+    await expect(installWindowsService({ ...cfg, port: 0 }, deps)).rejects.toThrow(/port/i);
+
+    expect(scripts).toHaveLength(0);
+    expect(existsSync(launcher)).toBe(false);
+  });
+});
+
+describe("Windows service uninstall", () => {
+  let root: string;
+  let cfg: ServiceConfig;
+  let launcher: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "pocketpet-winsvc-uninstall-"));
+    mkdirSync(join(root, "dist"), { recursive: true });
+    writeFileSync(join(root, "dist", "cli.js"), "// compiled bridge cli\n");
+    cfg = { home: join(root, "home"), nodePath: process.execPath, cliPath: join(root, "dist", "cli.js"), port: 7788 };
+    mkdirSync(cfg.home, { recursive: true });
+    launcher = join(cfg.home, "bridge-service.ps1");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("ends and deletes the task before removing both firewall rules in one elevation", async () => {
+    writeFileSync(launcher, windowsLauncherBytes(cfg));
+    const { deps, scripts } = fakeDeps();
+    const service = createWindowsService(deps);
+
+    await service.uninstall(cfg);
+
+    expect(scripts).toHaveLength(1);
+    const script = scripts[0]!;
+    const end = script.indexOf("/End");
+    const taskRemoval = script.indexOf("/Delete");
+    const ruleRemoval = script.indexOf("'delete' 'rule'");
+    expect(end).toBeGreaterThanOrEqual(0);
+    expect(end).toBeLessThan(taskRemoval);
+    expect(taskRemoval).toBeLessThan(ruleRemoval);
+    expect(script).toContain(FIREWALL_TCP);
+    expect(script).toContain(FIREWALL_MDNS);
+    expect(existsSync(launcher)).toBe(false);
+  });
+
+  it("keeps the launcher when UAC is canceled and reports the cancellation", async () => {
+    writeFileSync(launcher, windowsLauncherBytes(cfg));
+    const { deps } = fakeDeps({ elevatedStatus: ELEVATION_CANCELLED });
+    const service = createWindowsService(deps);
+
+    await expect(service.uninstall(cfg)).rejects.toMatchObject({ cancelled: true });
+    expect(existsSync(launcher)).toBe(true);
+  });
+
+  it("is idempotent when the launcher and task are already gone", async () => {
+    const { deps, scripts } = fakeDeps();
+    const service = createWindowsService(deps);
+
+    await expect(service.uninstall(cfg)).resolves.toBeUndefined();
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toContain("2>$null");
+  });
+});
+
+describe("Windows service status and label", () => {
+  let root: string;
+  let cfg: ServiceConfig;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "pocketpet-winsvc-status-"));
+    mkdirSync(join(root, "dist"), { recursive: true });
+    writeFileSync(join(root, "dist", "cli.js"), "// compiled bridge cli\n");
+    cfg = { home: join(root, "home"), nodePath: process.execPath, cliPath: join(root, "dist", "cli.js"), port: 7788 };
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("uses the PocketPet Bridge platform label", () => {
+    expect(createWindowsService(fakeDeps().deps).label).toBe("PocketPet Bridge");
+  });
+
+  it("queries PowerShell state without English schtasks labels or elevation", async () => {
+    const { deps, runs } = fakeDeps({ state: "Running\r\n" });
+    const service = createWindowsService(deps);
+
+    expect(await service.status(cfg)).toEqual({ installed: true, running: true });
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.command).toBe("powershell.exe");
+    const text = runs[0]!.args.join(" ");
+    expect(text).toContain(`Get-ScheduledTask -TaskName 'PocketPet Bridge'`);
+    expect(text).toContain("Select-Object -ExpandProperty State");
+    expect(text).not.toContain("/Query");
+    expect(text).not.toContain("TaskName:");
+  });
+
+  it("reports a stopped or missing task honestly", async () => {
+    for (const [state, expected] of [
+      ["Ready\r\n", { installed: true, running: false }],
+      ["Disabled\r\n", { installed: true, running: false }],
+      ["", { installed: false, running: false }],
+    ] as const) {
+      const { deps } = fakeDeps({ state });
+      expect(await createWindowsService(deps).status(cfg), state).toEqual(expected);
+    }
+  });
+});
+
+describe("Windows elevation runner", () => {
+  it("wraps the token-free script in Start-Process -Verb RunAs -Wait -PassThru", () => {
+    const script = "Write-Output 'hello'";
+    const wrapper = elevatedWrapperScript(script);
+
+    expect(wrapper).toContain("-Verb RunAs -Wait -PassThru");
+    expect(wrapper).toContain("-EncodedCommand");
+    expect(wrapper).not.toMatch(/token=|pairing|\?t=/i);
+    const encoded = wrapper.match(/-EncodedCommand','([A-Za-z0-9+/=]+)'/)?.[1];
+    expect(encoded, "wrapper embeds the encoded script").toBeTruthy();
+    expect(Buffer.from(encoded!, "base64").toString("utf16le")).toBe(script);
+    expect(wrapper).toContain(`exit ${ELEVATION_CANCELLED}`);
+    // UAC cancellation surfaces as Win32Exception 1223 or HResult 0x800704C7.
+    expect(wrapper).toContain("-2147023673");
+  });
+
+  it("fails closed when the encoded command exceeds the Windows command line limit", async () => {
+    await expect(defaultElevatedRunner("x".repeat(50_000))).rejects.toThrow(/command line limit/i);
+  });
+
+  it("builds install and uninstall scripts without secrets", () => {
+    const install = windowsInstallScript(windowsCfgFixture, SID);
+    const uninstall = windowsUninstallScript();
+
+    expect(install).not.toMatch(/token=|pairing|\?t=/i);
+    expect(uninstall).not.toMatch(/token=|pairing|\?t=/i);
+    expect(uninstall).toContain("$ErrorActionPreference = 'Stop'");
   });
 });
