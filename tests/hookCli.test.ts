@@ -88,8 +88,7 @@ describe("pocketpet hook claude", () => {
     }
   });
 
-  it("does not tighten the config file on the hook read path", () => {
-    if (process.platform === "win32") return;
+  it.skipIf(process.platform === "win32")("does not tighten the config file on the hook read path", () => {
     const target = join(home, "config.json");
     // Matching the owner-only mode is not required for a read; the hook must not chmod.
     chmodSync(target, 0o644);

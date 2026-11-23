@@ -26,7 +26,8 @@ describe("installClaudeHooks", () => {
     dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const file = join(dir, "settings.json");
     expect(installClaudeHooks(file).added).toEqual([...CLAUDE_HOOK_EVENTS]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits; its protection is the current-user ACL.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
@@ -36,11 +37,11 @@ describe("installClaudeHooks", () => {
     writeFileSync(file, JSON.stringify({ model: "opus" }));
     chmodSync(file, 0o600);
     expect(installClaudeHooks(file).added).toEqual([...CLAUDE_HOOK_EVENTS]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
-  it("writes through a symlinked settings path without replacing the link", () => {
+  it.skipIf(process.platform === "win32")("writes through a symlinked settings path without replacing the link", () => {
     dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const real = join(dir, "real-settings.json");
     const link = join(dir, "settings.json");

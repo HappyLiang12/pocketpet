@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -271,7 +272,8 @@ describe("pocketpet cli error handling", () => {
     expect(output).toContain("build and run the compiled CLI (dist/cli.js)");
     expect(output).toContain("Could not install the bridge service");
     expect(output).not.toContain(config.token);
-    expect(existsSync(join(home, "Library", "LaunchAgents", "dev.pocketpet.bridge.plist"))).toBe(false);
+    // launchd owns the plist only on macOS; Windows uses Task Scheduler instead.
+    if (process.platform !== "win32") expect(existsSync(join(home, "Library", "LaunchAgents", "dev.pocketpet.bridge.plist"))).toBe(false);
   });
 
   it("init fails without printing malformed config contents", async () => {
@@ -406,6 +408,44 @@ describe("Windows service CLI fallback", () => {
     expect(startForeground).not.toHaveBeenCalled();
     expect(output).toContain("Could not install the bridge service.");
     expect(output).not.toContain("Starting the bridge in the foreground.");
+  });
+
+  it("prints the service process's live .local from loopback health", async () => {
+    // The first probe fails so `up` takes the service branch; once the service is
+    // up, health reports the gated name that only the service process can know.
+    let probes = 0;
+    const server = createHttpServer((_req, res) => {
+      probes += 1;
+      if (probes === 1) {
+        res.writeHead(503);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: 0, localHostname: "happy-pc.local" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
+      const token = writeConfig(address.port);
+      const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
+
+      const { result, output } = await capture(() =>
+        runUp(["--yes", "--no-hooks", "--no-open"], {
+          platform,
+          platformName: "win32",
+          waitForInterrupt: async () => {},
+        }),
+      );
+
+      expect(result).toBe(0);
+      expect(output).toContain("Bridge service is running (PocketPet Bridge).");
+      expect(output).toContain(`http://happy-pc.local:${address.port}/?token=${token}`);
+      expect(output).not.toContain("Starting the bridge in the foreground.");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("keeps standalone service install fatal on Windows cancellation", async () => {

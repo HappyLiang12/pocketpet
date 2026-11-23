@@ -653,10 +653,16 @@ describe("bridge host lifecycle", () => {
       const first = await (await fetch(`http://127.0.0.1:${local.port}/setup`)).text();
       expect(first).toContain(`http://happy-pc.local:${local.port}/?token=${token}`);
 
+      // Loopback health exposes the live, gated name for service-mode pairing; no token.
+      const health = await (await fetch(`http://127.0.0.1:${local.port}/health`)).json();
+      expect(health).toMatchObject({ ok: true, localHostname: "happy-pc.local" });
+      expect(JSON.stringify(health)).not.toContain(local.config.token);
+
       // The setup page reads the adapter live, so a stopped responder hides the name again.
       advertising = false;
       const second = await (await fetch(`http://127.0.0.1:${local.port}/setup`)).text();
       expect(second).not.toContain("happy-pc.local");
+      expect((await (await fetch(`http://127.0.0.1:${local.port}/health`)).json()).localHostname).toBeNull();
     });
 
     expect(calls).toEqual(["start", "stop"]);
@@ -684,6 +690,8 @@ describe("bridge host lifecycle", () => {
       expect(html).toContain(`http://127.0.0.1:${local.port}/?token=${token}`);
       const [firstIp] = urlsForPort(local.port, local.config.token);
       if (firstIp) expect(html).toContain(firstIp);
+      // A refused advertisement must not leak the adapter name through health either.
+      expect((await (await fetch(`http://127.0.0.1:${local.port}/health`)).json()).localHostname).toBeNull();
     });
 
     expect(calls).toEqual(["start", "stop"]);

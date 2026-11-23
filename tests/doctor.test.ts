@@ -81,6 +81,10 @@ describe("doctorChecks Qoder hooks", () => {
     expect(check?.status).toBe("PASS");
     expect(check?.detail).toContain(join(home, ".qoder"));
     expect(check?.detail).not.toContain(".qoder-cn");
+    // Wiring only: the real Qoder app has never been observed running the hook.
+    expect(check?.detail).toContain("wired");
+    expect(check?.detail).toContain("real-app gate NOT RUN");
+    expect(check?.detail).not.toContain("observed");
   });
 
   it("fails and lists the missing events", async () => {

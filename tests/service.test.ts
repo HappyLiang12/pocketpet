@@ -64,14 +64,14 @@ function assertMode(path: string, mode: number): void {
   expect(statSync(path).mode & 0o777).toBe(mode);
 }
 
-describe("servicePath", () => {
+describe.skipIf(process.platform === "win32")("servicePath", () => {
   it("points at the per-user LaunchAgents plist", () => {
     expect(servicePath()).toBe(join(homedir(), "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`));
     expect(servicePath().endsWith("Library/LaunchAgents/dev.pocketpet.bridge.plist")).toBe(true);
   });
 });
 
-describe("servicePlist", () => {
+describe.skipIf(process.platform === "win32")("servicePlist", () => {
   it("contains the label, program arguments, environment, and log settings", () => {
     const cfg: ServiceConfig = {
       home: "/Users/fold pet/home",
@@ -111,7 +111,7 @@ describe("servicePlist", () => {
   });
 });
 
-describe("installService", () => {
+describe.skipIf(process.platform === "win32")("installService", () => {
   it("writes the plist, pre-creates the log with tight modes, and reloads the service", async () => {
     const cfg = setupConfig();
     const { calls, runner } = fakeRunner([1, 0]);
@@ -173,7 +173,7 @@ describe("installService", () => {
   });
 });
 
-describe("uninstallService", () => {
+describe.skipIf(process.platform === "win32")("uninstallService", () => {
   it("boots out, ignoring failure, then removes the plist", async () => {
     const cfg = setupConfig();
     const installed = fakeRunner();
@@ -194,7 +194,7 @@ describe("uninstallService", () => {
   });
 });
 
-describe("serviceStatus", () => {
+describe.skipIf(process.platform === "win32")("serviceStatus", () => {
   it("returns true when launchctl print succeeds", async () => {
     const cfg = setupConfig();
     const { calls, runner } = fakeRunner([0]);
@@ -217,7 +217,7 @@ describe("serviceStatus", () => {
   });
 });
 
-describe("darwinService", () => {
+describe.skipIf(process.platform === "win32")("darwinService", () => {
   it("reports installed but stopped when the plist exists outside the data home", async () => {
     const plistPath = externalPlistPath();
     const cfg = setupConfig({ plistPath });

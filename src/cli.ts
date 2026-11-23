@@ -7,7 +7,7 @@ import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
 import { configPath, ensureConfig, hardenConfig, pocketpetHome, loadConfig, type Config } from "./config.js";
-import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
+import { CLAUDE_HOOK_EVENTS, claudeHookCommand, installClaudeHooks, isClaudeHookCommand } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 import { installQoderHooks, qoderHookEventStatus, qoderSettingsPaths } from "./adapters/qoderInstall.js";
 import { mapQoderHook } from "./adapters/qoderHook.js";
@@ -16,6 +16,7 @@ import { pairingCopy, pickLanguage } from "./i18n.js";
 import { askYesNo, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
 import { platform } from "./platform/index.js";
 import type { Platform, ServiceConfig } from "./platform/types.js";
+import { windowsHookCommand } from "./platform/windows/hooks.js";
 import { startBridge, type Bridge, type BridgeOptions } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
@@ -166,7 +167,7 @@ export function hasPocketPetHooks(settingsPath: string): boolean {
       (entry) =>
         isRecord(entry) &&
         Array.isArray(entry.hooks) &&
-        entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && hook.command === HOOK_COMMAND),
+        entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && isClaudeHookCommand(hook.command)),
     );
   });
 }
@@ -188,11 +189,17 @@ function shellQuote(value: string): string {
 /**
  * Shell-safe command for Qoder's Settings → Hooks. A macOS GUI app may not
  * inherit the shell PATH, so a compiled CLI (dist/cli.js) is invoked through
- * the absolute Node binary. A TypeScript entry point (tsx) falls back to the
- * linked `pocketpet` command; production installs use dist/cli.js.
+ * the absolute Node binary. Windows uses the platform's quoted absolute
+ * command. A TypeScript entry point (tsx) falls back to the linked `pocketpet`
+ * command; production installs use dist/cli.js.
  */
-export function qoderHookCommand(cliPath = fileURLToPath(import.meta.url), nodePath = process.execPath): string {
+export function qoderHookCommand(
+  cliPath = fileURLToPath(import.meta.url),
+  nodePath = process.execPath,
+  platformName: NodeJS.Platform = process.platform,
+): string {
   if (!cliPath.endsWith(".js")) return "pocketpet hook qoder";
+  if (platformName === "win32") return windowsHookCommand(nodePath, cliPath, "qoder");
   return `${shellQuote(nodePath)} ${shellQuote(cliPath)} hook qoder`;
 }
 
@@ -247,7 +254,7 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
     return;
   }
   try {
-    const result = installClaudeHooks(settingsPath);
+    const result = installClaudeHooks(settingsPath, claudeHookCommand(fileURLToPath(import.meta.url), process.execPath));
     console.log(`Claude Code hooks added: ${result.added.join(", ") || "none"}`);
   } catch {
     console.error("Claude Code hooks: could not update settings; continuing without hooks.");
@@ -304,6 +311,27 @@ async function bridgeHealthy(port: number): Promise<boolean> {
   }
 }
 
+/**
+ * The `.local` name the *bridge process* is currently advertising, read from
+ * its loopback-only health response. A service-mode `up` runs in a different
+ * process, so its own host adapter never has the live advertisement. The
+ * response carries no token; anything malformed or unreachable is null and the
+ * IP/USB pairing stays usable.
+ */
+export async function liveLocalHostname(port: number): Promise<string | null> {
+  if (port <= 0) return null;
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    if (!response.ok) return null;
+    const body: unknown = await response.json();
+    if (!isRecord(body)) return null;
+    const value = body.localHostname;
+    return typeof value === "string" && value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 async function waitForHealth(port: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -357,9 +385,32 @@ export type PairingOutput = {
   hostname?: string | null;
 };
 
+export type SetupOpenCommand = { command: string; args: string[] };
+
+/**
+ * Platform-aware setup-page opener. macOS keeps `open`; Windows launches the
+ * loopback URL through PowerShell `Start-Process`, which ShellExecutes the
+ * default browser without a `cmd /c` quoting layer. The URL contains only the
+ * loopback port, never the token.
+ */
+export function setupPageOpenCommand(port: number, platformName: NodeJS.Platform = process.platform): SetupOpenCommand {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new RangeError(`invalid bridge port: expected an integer in 1-65535, got ${String(port)}`);
+  }
+  const url = `http://127.0.0.1:${port}/setup`;
+  if (platformName === "win32") {
+    return {
+      command: "powershell.exe",
+      args: ["-NoProfile", "-NonInteractive", "-Command", `Start-Process -FilePath '${url}'`],
+    };
+  }
+  return { command: "open", args: [url] };
+}
+
 function openSetupPage(port: number): void {
   try {
-    execFileSync("open", [`http://127.0.0.1:${port}/setup`], { stdio: "ignore" });
+    const { command, args } = setupPageOpenCommand(port);
+    execFileSync(command, args, { stdio: "ignore" });
   } catch {
     // Opening the browser is best effort.
   }
@@ -423,7 +474,7 @@ async function runInit(): Promise<number> {
     console.error("Fix or delete the file, then run `pocketpet init` again.");
     return 1;
   }
-  const result = installClaudeHooks(claudeSettingsPath());
+  const result = installClaudeHooks(claudeSettingsPath(), claudeHookCommand(fileURLToPath(import.meta.url), process.execPath));
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
@@ -475,7 +526,7 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
       qrHost: options.qrHost,
       open: !options.noOpen,
       keepRunning: true,
-      hostname: target.host.localHostname(),
+      hostname: (await liveLocalHostname(config.port)) ?? target.host.localHostname(),
     });
     return 0;
   }
@@ -529,7 +580,9 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
         qrHost: options.qrHost,
         open: !options.noOpen,
         keepRunning: true,
-        hostname: target.host.localHostname(),
+        // The service process owns the Windows mDNS responder; its health is the
+        // only live source. The adapter fallback keeps macOS behavior unchanged.
+        hostname: (await liveLocalHostname(config.port)) ?? target.host.localHostname(),
       });
       return 0;
     }
