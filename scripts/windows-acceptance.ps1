@@ -360,9 +360,20 @@ $gates.Add((New-Gate 'scheduled task' $serviceGate $serviceDetail))
 # ---------------------------------------------------------------------------
 $firewallInfo = [ordered]@{
   rules = @()
+  netshOnly = @()
 }
 $firewallGate = 'NOT RUN'
 $firewallDetail = 'Get-NetFirewallRule is unavailable'
+function Test-NetshFirewallRulePresent {
+  param([string]$Name)
+  try {
+    $text = (& netsh.exe advfirewall firewall show rule "name=$Name" 2>$null) -join "`n"
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return ($text -match [regex]::Escape($Name))
+  } catch {
+    return $false
+  }
+}
 if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
   $expectedRules = @(
     @{ Name = 'PocketPet Bridge TCP'; Protocol = 'TCP'; LocalPort = [string]$Port },
@@ -370,10 +381,18 @@ if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
   )
   $issues = [System.Collections.Generic.List[string]]::new()
   $ruleInfo = [System.Collections.Generic.List[object]]::new()
+  $netshOnly = [System.Collections.Generic.List[string]]::new()
   try {
     foreach ($expected in $expectedRules) {
       $rules = @(Get-NetFirewallRule -DisplayName $expected.Name -ErrorAction SilentlyContinue | Where-Object { $_ })
       if ($rules.Count -eq 0) {
+        # A non-admin token can make the NetSecurity cmdlet return no rules even
+        # when netsh can see them. Existence via netsh is NOT RUN, never a false
+        # "missing" FAIL; content still needs an elevated read or the phone test.
+        if (Test-NetshFirewallRulePresent $expected.Name) {
+          $netshOnly.Add($expected.Name) | Out-Null
+          continue
+        }
         $issues.Add("$($expected.Name) is missing") | Out-Null
         continue
       }
@@ -414,12 +433,19 @@ if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
       }
     }
     $firewallInfo.rules = $ruleInfo.ToArray()
-    if ($issues.Count -eq 0) {
+    $firewallInfo.netshOnly = $netshOnly.ToArray()
+    if ($issues.Count -eq 0 -and $netshOnly.Count -eq 0) {
       $firewallGate = 'PASS'
       $firewallDetail = "Private-profile inbound allow rules verified for TCP $Port and mDNS UDP 5353"
+    } elseif ($issues.Count -eq 0) {
+      $firewallGate = 'NOT RUN'
+      $firewallDetail = "NetSecurity returned no rule content for this non-admin token; netsh shows $($netshOnly -join ', '). Verify content with an elevated Get-NetFirewallRule and the phone test."
     } else {
       $firewallGate = 'FAIL'
       $firewallDetail = ($issues -join '; ')
+      if ($netshOnly.Count -gt 0) {
+        $firewallDetail += "; netsh shows $($netshOnly -join ', ') but their content was unreadable"
+      }
     }
   } catch {
     $firewallGate = 'NOT RUN'
