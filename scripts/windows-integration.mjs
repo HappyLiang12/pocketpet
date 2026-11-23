@@ -3,7 +3,8 @@
  * Windows-only integration smoke for the real host APIs PocketPet depends on.
  *
  * It creates a temporary home and config, proves the config ACL is
- * current-user-only, then creates, queries and deletes a uniquely named
+ * current-user-only, proves a second startup protection leaves that ACL
+ * unchanged, then creates, queries and deletes a uniquely named
  * scheduled task and uniquely named private-profile firewall rules. Every
  * resource is removed in `finally`; the real `PocketPet Bridge` task and the
  * real PocketPet firewall rules are never read or written.
@@ -125,6 +126,10 @@ try {
   const { ensureConfig } = await import("../dist/config.js").catch(() => {
     throw new Error("windows integration requires the compiled bridge: run `npm run build` first");
   });
+  ensureConfig(home);
+  assertCurrentUserOnlyAcl(join(home, "config.json"));
+  // Repeated startup protection must be a read-only no-op: a standard user
+  // cannot re-apply Set-Acl to an already-protected DACL (SeSecurityPrivilege).
   ensureConfig(home);
   assertCurrentUserOnlyAcl(join(home, "config.json"));
 

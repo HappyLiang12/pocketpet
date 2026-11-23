@@ -142,19 +142,22 @@ describe("POCKETPET_PORT override on first creation", () => {
 });
 
 describe("config protection", () => {
-  it("protects home and logs before writing, and the temp file before the rename", () => {
+  it("protects home and logs before writing, and only the temp file before the rename", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const security = fakeSecurity();
     const config = ensureConfig(home, process.env, security);
+    const target = configPath(home);
 
     expect(config.token.length).toBeGreaterThanOrEqual(32);
     expect(security.calls[0]).toBe(`home:${home}`);
     expect(security.calls).toContain(`logs:${home}`);
-    const tmpCall = security.calls.indexOf(`file:${configPath(home)}.tmp`);
-    const finalCall = security.calls.indexOf(`file:${configPath(home)}`);
-    expect(tmpCall).toBeGreaterThan(-1);
-    expect(finalCall).toBeGreaterThan(tmpCall);
-    expect(existsSync(configPath(home))).toBe(true);
+    expect(security.calls).toContain(`file:${target}.tmp`);
+    // The same-directory rename preserves the temp file's DACL, so the final
+    // config is never protected again: a second Set-Acl on an already-protected
+    // DACL fails with SeSecurityPrivilege for a standard Windows user.
+    expect(security.calls).not.toContain(`file:${target}`);
+    expect(security.calls.filter((call) => call.startsWith("file:"))).toEqual([`file:${target}.tmp`]);
+    expect(existsSync(target)).toBe(true);
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
@@ -175,21 +178,23 @@ describe("config protection", () => {
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("keeps a pre-existing config when post-rename verification fails", () => {
+  it("does not protect the final config again after the rename", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const created = ensureConfig(home, process.env, testSecurity);
     const target = configPath(home);
-    // Temp-file protection passes; only the post-rename verification fails.
-    const security = fakeSecurity({
-      protectFile: (path) => {
-        if (path === target) throw new Error("ACL verification failed");
-      },
-    });
+    const security = fakeSecurity();
 
-    expect(() => saveConfig(home, { ...created, activePet: "local:boba" }, security)).toThrow(/verification/);
-    // The token survives: a transient verification error must not destroy it.
-    expect(existsSync(target)).toBe(true);
-    expect(JSON.parse(readFileSync(target, "utf8")).token).toBe(created.token);
+    saveConfig(home, { ...created, activePet: "local:boba" }, security);
+
+    // Temp-file protection alone precedes the rename; the target is never
+    // re-protected, because a standard Windows user cannot re-apply Set-Acl to
+    // an already-protected DACL (SeSecurityPrivilege).
+    expect(security.calls.filter((call) => call.startsWith("file:"))).toEqual([`file:${target}.tmp`]);
+    expect(security.calls).not.toContain(`file:${target}`);
+    // The rename still installs the new content and consumes the temp file.
+    const saved = JSON.parse(readFileSync(target, "utf8"));
+    expect(saved.token).toBe(created.token);
+    expect(saved.activePet).toBe("local:boba");
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
@@ -216,6 +221,8 @@ describe("config protection", () => {
     const recorder = fakeSecurity();
 
     expect(hardenConfig(home, recorder).token).toBe(created.token);
+    // Startup still requests all three every time; the Windows protection script
+    // is the no-op layer that exits before Set-Acl when the DACL already matches.
     expect(recorder.calls).toEqual([`home:${home}`, `logs:${home}`, `file:${configPath(home)}`]);
   });
 

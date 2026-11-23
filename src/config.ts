@@ -113,11 +113,13 @@ export function loadConfig(home: string): Config {
 
 /**
  * Write the config atomically and fail closed. The token-bearing temp file is
- * protected and verified before it can replace the live config, so the rename
- * cannot install a weaker DACL. After the rename the final path is verified
- * again; that verification is intentionally not destructive: once the rename
- * happened the old token is gone, and deleting the file would turn a transient
- * verification failure into token loss.
+ * protected and verified before it can replace the live config, and the
+ * same-directory rename moves that DACL onto the final path. The target is
+ * deliberately not protected again afterwards: on Windows a second `Set-Acl` on
+ * an already-protected DACL fails with `SeSecurityPrivilege` for a standard
+ * user, and the rename cannot install a weaker DACL. A failure before the
+ * rename removes the temp file and rethrows; the previous config stays in
+ * place.
  *
  * Precondition: an existing home must already be protected by `ensureConfig` or
  * `hardenConfig`. A home created here is protected before the temp file exists.
@@ -131,7 +133,6 @@ export function saveConfig(home: string, config: Config, security: PrivatePaths 
     writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", { mode });
     security.protectFile(tmpPath);
     renameSync(tmpPath, target);
-    security.protectFile(target);
   } catch (error) {
     try {
       unlinkSync(tmpPath);

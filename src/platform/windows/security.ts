@@ -67,15 +67,27 @@ export function currentUserSid(run: CommandRunner = defaultRunner): string {
 }
 
 /**
- * Replace the DACL with one full-control ACE for `sid`, then verify it.
+ * Replace the DACL with one full-control ACE for `sid`, then verify it — unless
+ * the DACL already is exactly that.
  *
  * `SetAccessRuleProtection($true,$false)` removes inheritance and inherited
  * entries; the loop removes every remaining explicit entry (including
  * administrators and SYSTEM). The verification exits non-zero unless the path
  * ends with exactly one protected allow ACE for the current-user SID.
+ *
+ * A standard (non-elevated) user cannot apply `Set-Acl` to a DACL that is
+ * already protected: the call requires SeSecurityPrivilege and fails with
+ * `PrivilegeNotHeldException`. The script therefore exits 0 before any mutation
+ * when the DACL already equals the exact required current-user-only state, so
+ * repeated startup protection is a read-only no-op. Anything weaker falls
+ * through to the full replacement and must pass the post-mutation verification
+ * (fail closed).
  */
 function protectScript(path: string, sid: string, kind: "dir" | "file"): string {
   const inheritance = kind === "dir" ? "ContainerInherit,ObjectInherit" : "None";
+  // InheritanceFlags compared as an integer mask: None = 0,
+  // ContainerInherit|ObjectInherit = 1|2 = 3.
+  const inheritanceMask = kind === "dir" ? 3 : 0;
   return [
     "$ErrorActionPreference='Stop';",
     `$p=${psQuote(path)};$sid=${psQuote(sid)};`,
@@ -83,6 +95,11 @@ function protectScript(path: string, sid: string, kind: "dir" | "file"): string 
     // as an NTAccount name; a SID string must first become a SecurityIdentifier.
     "$sidObj=New-Object System.Security.Principal.SecurityIdentifier($sid);",
     "$acl=Get-Acl -LiteralPath $p;",
+    // Idempotence gate: only the exact required DACL skips the mutation below.
+    `$requiredInheritance=${inheritanceMask};`,
+    "$alreadyExact=$false;",
+    "if($acl.AreAccessRulesProtected -and $acl.Access.Count -eq 1){$r=$acl.Access[0];if($r.AccessControlType -eq 'Allow' -and $r.FileSystemRights.ToString().Contains('FullControl') -and [int]$r.InheritanceFlags -eq $requiredInheritance){try{$alreadyExact=($r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid)}catch{$alreadyExact=$false}}};",
+    "if($alreadyExact -eq $true){exit 0};",
     "$acl.SetAccessRuleProtection($true,$false);",
     "foreach($r in @($acl.Access)){$null=$acl.RemoveAccessRule($r)};",
     `$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sidObj,'FullControl','${inheritance}','None','Allow')));`,
