@@ -5,10 +5,12 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main, hasPocketPetHooks, printPairing, qoderHookCommand } from "../src/cli.js";
+import { main, hasPocketPetHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
+import type { Platform, ServiceManager } from "../src/platform/types.js";
+import type { Bridge } from "../src/server.js";
 
 let home = "";
 let claudeDir = "";
@@ -305,6 +307,129 @@ describe("pocketpet cli error handling", () => {
     } finally {
       await new Promise<void>((resolve) => blocked.close(() => resolve()));
     }
+  });
+});
+
+describe("Windows service CLI fallback", () => {
+  function fakePlatform(service: Partial<ServiceManager> = {}): Platform {
+    return {
+      service: {
+        label: "PocketPet Bridge",
+        install: vi.fn(async () => {}),
+        uninstall: vi.fn(async () => {}),
+        status: vi.fn(async () => ({ installed: false, running: false })),
+        ...service,
+      },
+      host: { localHostname: () => null, startAdvertisement: async () => false, stopAdvertisement: async () => {} },
+      security: { protectHome: () => {}, protectLogs: () => {}, protectFile: () => {} },
+    };
+  }
+
+  function fakeForeground(port: number) {
+    return vi.fn(async () =>
+      ({
+        port,
+        config: ensureConfig(home),
+        aggregator: {} as never,
+        broadcast: () => {},
+        close: async () => {},
+      }) as Bridge,
+    );
+  }
+
+  async function capture<T>(work: () => Promise<T>): Promise<{ result: T; output: string }> {
+    const lines: string[] = [];
+    const record = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(record);
+    const error = vi.spyOn(console, "error").mockImplementation(record);
+    try {
+      return { result: await work(), output: lines.join("\n") };
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+  }
+
+  it("continues in the foreground on Windows when the service install fails", async () => {
+    writeConfig(0);
+    const platform = fakePlatform({
+      install: vi.fn(async () => {
+        throw new Error("install was cancelled at the elevation prompt");
+      }),
+    });
+    const startForeground = fakeForeground(7788);
+    const waitForInterrupt = vi.fn(async () => {});
+
+    const { result, output } = await capture(() =>
+      runUp(["--yes", "--no-hooks", "--no-open"], {
+        platform,
+        platformName: "win32",
+        startForeground,
+        waitForInterrupt,
+      }),
+    );
+
+    expect(result).toBe(0);
+    expect(platform.service.install).toHaveBeenCalledWith(expect.objectContaining({ home, port: 0 }));
+    expect(startForeground).toHaveBeenCalledTimes(1);
+    expect(waitForInterrupt).toHaveBeenCalledTimes(1);
+    expect(output).toContain("Could not install the bridge service.");
+    expect(output).toContain("Continuing in the foreground; run `pocketpet service install` from an elevated shell later.");
+    expect(output).toContain("Starting the bridge in the foreground.");
+    expect(output).not.toContain("Bridge service is running");
+  });
+
+  it("keeps the macOS install failure fatal in up", async () => {
+    writeConfig(0);
+    const platform = fakePlatform({
+      install: vi.fn(async () => {
+        throw new Error("launchctl bootstrap failed");
+      }),
+    });
+    const startForeground = fakeForeground(7788);
+
+    const { result, output } = await capture(() =>
+      runUp(["--yes", "--no-hooks", "--no-open"], {
+        platform,
+        platformName: "darwin",
+        startForeground,
+        waitForInterrupt: async () => {},
+      }),
+    );
+
+    expect(result).toBe(1);
+    expect(startForeground).not.toHaveBeenCalled();
+    expect(output).toContain("Could not install the bridge service.");
+    expect(output).not.toContain("Starting the bridge in the foreground.");
+  });
+
+  it("keeps standalone service install fatal on Windows cancellation", async () => {
+    const config = ensureConfig(home);
+    const platform = fakePlatform({
+      install: vi.fn(async () => {
+        throw new Error("install was cancelled at the elevation prompt");
+      }),
+    });
+
+    const { result, output } = await capture(() => runService("install", { platform }));
+
+    expect(result).toBe(1);
+    expect(platform.service.install).toHaveBeenCalledTimes(1);
+    expect(output).toContain("Could not install the bridge service (PocketPet Bridge).");
+    expect(output).toContain("The elevation prompt was canceled.");
+    expect(output).not.toContain(config.token);
+  });
+
+  it("uses the platform service label for status messages", async () => {
+    ensureConfig(home);
+    const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
+
+    const { result, output } = await capture(() => runService("status", { platform }));
+
+    expect(result).toBe(0);
+    expect(output).toContain("Bridge service is running (PocketPet Bridge).");
   });
 });
 

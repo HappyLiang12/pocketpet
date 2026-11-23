@@ -123,6 +123,19 @@ export function isSetupMutationAllowed(req: IncomingMessage, port: number): bool
   }
 }
 
+/**
+ * Setup System card: a real running/stopped answer on every platform that has a
+ * service (macOS launchd, Windows Task Scheduler). Unsupported platforms reject
+ * the probe; `null` tells the page to say "not available" instead of "stopped".
+ */
+export async function setupServiceRunning(probe: () => Promise<boolean>): Promise<boolean | null> {
+  try {
+    return await probe();
+  } catch {
+    return null;
+  }
+}
+
 export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   const { home, config } = opts;
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -247,7 +260,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
             platform.service
               .status({ home, nodePath: process.execPath, cliPath: "", port: config.port })
               .then((state) => state.running));
-        const serviceRunning = process.platform === "darwin" ? await probeService().catch(() => false) : null;
+        const serviceRunning = await setupServiceRunning(probeService);
         const assets = setupAssets(opts.webDist);
         const html = setupPageHtml({
           qrSvg,

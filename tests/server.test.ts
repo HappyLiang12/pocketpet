@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { ensureConfig } from "../src/config.js";
-import { startBridge, type Bridge } from "../src/server.js";
+import { startBridge, setupServiceRunning, type Bridge } from "../src/server.js";
 
 let home = "";
 let bridge: Bridge;
@@ -134,9 +134,19 @@ describe("bridge server setup page", () => {
     expect(html).toContain("loopback-only");
     expect(html).not.toMatch(/\bMac\b/);
     expect(bridge.port).not.toBe(bridge.config.port);
-    const service = process.platform === "darwin" ? "Not running" : "Not available on this platform";
-    expect(html).toContain(service);
-    if (process.platform === "darwin") expect(probeService).toHaveBeenCalled();
+    // Darwin and Windows both expose a real service status; only unsupported platforms are unknown.
+    expect(html).toContain("Not running");
+    expect(probeService).toHaveBeenCalled();
+  });
+
+  it("maps a rejected service probe to an unavailable System card instead of failing", async () => {
+    await expect(setupServiceRunning(async () => false)).resolves.toBe(false);
+    await expect(setupServiceRunning(async () => true)).resolves.toBe(true);
+    await expect(
+      setupServiceRunning(async () => {
+        throw new Error("service is not supported on this platform");
+      }),
+    ).resolves.toBeNull();
   });
 
   it("accepts the loopback Host forms with the actual listening port", async () => {

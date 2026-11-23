@@ -18,10 +18,13 @@ describe("platform selection", () => {
       .rejects.toThrow(/not supported/i);
   });
 
-  it("keeps Windows on the unsupported adapter until the full platform exists", async () => {
+  it("selects the Windows bundle with the Task Scheduler service label", () => {
     const platform = platformFor("win32");
-    expect(platform.service.label).toBe("PocketPet bridge");
+    expect(platform.service.label).toBe("PocketPet Bridge");
+    expect(typeof platform.service.install).toBe("function");
+    expect(typeof platform.service.uninstall).toBe("function");
+    expect(typeof platform.service.status).toBe("function");
+    // Task 6 replaces the hostname stub; mDNS is not claimed yet.
     expect(platform.host.localHostname()).toBeNull();
-    await expect(platform.host.startAdvertisement()).resolves.toBe(false);
   });
 });

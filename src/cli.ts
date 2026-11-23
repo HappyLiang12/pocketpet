@@ -15,8 +15,8 @@ import { doctorChecks } from "./doctor.js";
 import { pairingCopy, pickLanguage } from "./i18n.js";
 import { askYesNo, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
 import { platform } from "./platform/index.js";
-import type { ServiceConfig } from "./platform/types.js";
-import { startBridge, type Bridge } from "./server.js";
+import type { Platform, ServiceConfig } from "./platform/types.js";
+import { startBridge, type Bridge, type BridgeOptions } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
 const MAX_LOG_BYTES = 1_000_000;
@@ -353,6 +353,8 @@ export type PairingOutput = {
   keepRunning: boolean;
   /** Test hook: overrides the detected LAN interfaces. */
   interfaces?: InterfaceMap;
+  /** Test/selection hook: overrides the active platform hostname. */
+  hostname?: string | null;
 };
 
 function openSetupPage(port: number): void {
@@ -368,7 +370,7 @@ export function printPairing(options: PairingOutput): void {
   const lang = pickLanguage(process.env.POCKETPET_LANG ?? process.env.LANG ?? null);
   const copy = pairingCopy[lang];
   const links = pairingLinks(options.port, options.token, {
-    hostname: platform.host.localHostname(),
+    hostname: options.hostname !== undefined ? options.hostname : platform.host.localHostname(),
     qrHost: options.qrHost,
     interfaces: options.interfaces,
   });
@@ -422,12 +424,25 @@ async function runInit(): Promise<number> {
   return 0;
 }
 
-async function runUp(args: string[]): Promise<number> {
+export type UpDeps = {
+  /** Test/selection hook: platform bundle to use for service and host state. */
+  platform?: Platform;
+  /** Test/selection hook: platform name that gates the Windows UAC fallback. */
+  platformName?: NodeJS.Platform;
+  /** Test hook: start the foreground bridge without binding a real port. */
+  startForeground?: (options: BridgeOptions) => Promise<Bridge>;
+  /** Test hook: stop waiting for Ctrl+C immediately. */
+  waitForInterrupt?: (bridge: Bridge) => Promise<void>;
+};
+
+export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> {
   const options = parseUpOptions(args);
   if (!options) {
     console.error(UP_USAGE);
     return 2;
   }
+  const target = deps.platform ?? platform;
+  const platformName = deps.platformName ?? process.platform;
   const home = pocketpetHome();
   let config: Config;
   try {
@@ -446,7 +461,14 @@ async function runUp(args: string[]): Promise<number> {
 
   if (await bridgeHealthy(config.port)) {
     console.log(`Bridge already running on port ${config.port}.`);
-    printPairing({ port: config.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: true });
+    printPairing({
+      port: config.port,
+      token: config.token,
+      qrHost: options.qrHost,
+      open: !options.noOpen,
+      keepRunning: true,
+      hostname: target.host.localHostname(),
+    });
     return 0;
   }
 
@@ -454,7 +476,7 @@ async function runUp(args: string[]): Promise<number> {
   let installed = false;
   if (!options.noService) {
     try {
-      installed = (await platform.service.status(serviceConfig)).running;
+      installed = (await target.service.status(serviceConfig)).running;
     } catch {
       installed = false;
     }
@@ -466,43 +488,77 @@ async function runUp(args: string[]): Promise<number> {
     else if (tty) serviceMode = await askYesNo("Start bridge at login?", false, tty);
   }
 
+  let fellBack = false;
   if (serviceMode) {
+    let ready = installed;
     if (!installed) {
       try {
-        await platform.service.install(serviceConfig);
+        await target.service.install(serviceConfig);
+        ready = true;
       } catch {
-        console.error("Could not install the bridge service. Build the CLI and run `pocketpet service install` for details.");
-        return 1;
+        console.error("Could not install the bridge service.");
+        if (platformName !== "win32") {
+          console.error("Build the CLI and run `pocketpet service install` for details.");
+          return 1;
+        }
+        // One UAC was already spent. Report the actionable command and keep the
+        // bridge usable in the foreground; never claim the service is running.
+        console.error("Continuing in the foreground; run `pocketpet service install` from an elevated shell later.");
+        fellBack = true;
       }
     }
-    if (!(await waitForHealth(config.port, SERVICE_HEALTH_TIMEOUT_MS))) {
-      console.error(`Bridge is not responding on port ${config.port}.`);
-      console.error("Run `pocketpet service install` to reload it, or `pocketpet run` in the foreground to see the error.");
-      return 1;
+    if (ready) {
+      if (!(await waitForHealth(config.port, SERVICE_HEALTH_TIMEOUT_MS))) {
+        console.error(`Bridge is not responding on port ${config.port}.`);
+        console.error("Run `pocketpet service install` to reload it, or `pocketpet run` in the foreground to see the error.");
+        return 1;
+      }
+      console.log(`Bridge service is running (${target.service.label}).`);
+      printPairing({
+        port: config.port,
+        token: config.token,
+        qrHost: options.qrHost,
+        open: !options.noOpen,
+        keepRunning: true,
+        hostname: target.host.localHostname(),
+      });
+      return 0;
     }
-    console.log(`Bridge service is running (${platform.service.label}).`);
-    printPairing({ port: config.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: true });
-    return 0;
   }
 
-  const bridge = await startBridge({ home, config, webDist: webDistPath() });
-  printPairing({ port: bridge.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: false });
-  await waitForInterrupt(bridge);
+  if (fellBack) console.log("Starting the bridge in the foreground.");
+  const startForeground = deps.startForeground ?? startBridge;
+  const bridge = await startForeground({ home, config, webDist: webDistPath() });
+  printPairing({
+    port: bridge.port,
+    token: config.token,
+    qrHost: options.qrHost,
+    open: !options.noOpen,
+    keepRunning: false,
+    hostname: target.host.localHostname(),
+  });
+  await (deps.waitForInterrupt ?? waitForInterrupt)(bridge);
   return 0;
 }
 
 /** Fixed, token-free service error; the compiled-CLI refusal is safe to echo verbatim. */
-function serviceFailureMessage(action: "install" | "uninstall", error: unknown): string {
+function serviceFailureMessage(action: "install" | "uninstall", error: unknown, label: string): string {
   const message = error instanceof Error ? error.message : "";
+  if (/cancel/i.test(message)) {
+    return `Could not ${action} the bridge service (${label}). The elevation prompt was canceled.`;
+  }
   const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
-  return `Could not ${action} the bridge service (${platform.service.label}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
+  return `Could not ${action} the bridge service (${label}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
 }
 
-async function runService(action: string | undefined): Promise<number> {
+export type ServiceDeps = { platform?: Platform };
+
+export async function runService(action: string | undefined, deps: ServiceDeps = {}): Promise<number> {
   if (action !== "install" && action !== "uninstall" && action !== "status") {
     console.error(SERVICE_USAGE);
     return 2;
   }
+  const target = deps.platform ?? platform;
   const home = pocketpetHome();
   let config: Config;
   try {
@@ -514,27 +570,27 @@ async function runService(action: string | undefined): Promise<number> {
   const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url), port: config.port };
   if (action === "install") {
     try {
-      await platform.service.install(serviceConfig);
+      await target.service.install(serviceConfig);
     } catch (error) {
       // The refusal message names the CLI path, never the token.
-      console.error(serviceFailureMessage("install", error));
+      console.error(serviceFailureMessage("install", error, target.service.label));
       return 1;
     }
-    console.log(`Installed ${platform.service.label}. The bridge starts at login and keeps running.`);
+    console.log(`Installed ${target.service.label}. The bridge starts at login and keeps running.`);
     return 0;
   }
   if (action === "uninstall") {
     try {
-      await platform.service.uninstall(serviceConfig);
+      await target.service.uninstall(serviceConfig);
     } catch (error) {
-      console.error(serviceFailureMessage("uninstall", error));
+      console.error(serviceFailureMessage("uninstall", error, target.service.label));
       return 1;
     }
-    console.log(`Removed ${platform.service.label}.`);
+    console.log(`Removed ${target.service.label}.`);
     return 0;
   }
-  const running = (await platform.service.status(serviceConfig)).running;
-  console.log(running ? `Bridge service is running (${platform.service.label}).` : `Bridge service is not running (${platform.service.label}).`);
+  const running = (await target.service.status(serviceConfig)).running;
+  console.log(running ? `Bridge service is running (${target.service.label}).` : `Bridge service is not running (${target.service.label}).`);
   return running ? 0 : 1;
 }
 
