@@ -54,7 +54,7 @@ function assertElevated() {
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    "([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)",
+    "([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)",
   ]).trim().toLowerCase();
   if (output !== "true") {
     throw new Error("windows integration requires an elevated shell; run it from an elevated PowerShell");

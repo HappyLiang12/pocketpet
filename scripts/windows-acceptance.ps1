@@ -72,7 +72,11 @@ function New-Gate {
   }
 }
 
-$gates = New-Object System.Collections.Generic.List[object]
+# Generic lists are created with ::new(); New-Object on a generic List and
+# wrapping it in @() throws "Argument types do not match" on Windows
+# PowerShell 5.1 and pwsh 7.6, which aborted the probe before it printed JSON.
+# Output is serialized with .ToArray() instead of @($list).
+$gates = [System.Collections.Generic.List[object]]::new()
 
 # ---------------------------------------------------------------------------
 # Host: Windows version, build, architecture, PowerShell.
@@ -212,7 +216,7 @@ function Test-ProtectedPath {
     return $state
   }
 
-  $entries = New-Object System.Collections.Generic.List[object]
+  $entries = [System.Collections.Generic.List[object]]::new()
   foreach ($lineValue in @($raw)) {
     $line = [string]$lineValue
     if ([string]::IsNullOrWhiteSpace($line)) { continue }
@@ -230,7 +234,7 @@ function Test-ProtectedPath {
     }
   }
 
-  $state.entries = @($entries | ForEach-Object {
+  $state.entries = @($entries.ToArray() | ForEach-Object {
     [pscustomobject]@{ principal = (Hide-Text $_.principal); flags = $_.flags }
   })
 
@@ -242,12 +246,12 @@ function Test-ProtectedPath {
     $protectedFlag = $null
   }
 
-  $reasons = New-Object System.Collections.Generic.List[string]
+  $reasons = [System.Collections.Generic.List[string]]::new()
   if ($entries.Count -eq 0) { $reasons.Add('no ACL entry') | Out-Null }
   if ($entries.Count -gt 1) { $reasons.Add("$($entries.Count) ACL entries") | Out-Null }
   if ($protectedFlag -eq $false) { $reasons.Add('inheritance is still enabled') | Out-Null }
-  $inherited = @($entries | Where-Object { $_.inherited }).Count
-  $denied = @($entries | Where-Object { $_.deny }).Count
+  $inherited = @($entries.ToArray() | Where-Object { $_.inherited }).Count
+  $denied = @($entries.ToArray() | Where-Object { $_.deny }).Count
   if ($inherited -gt 0) { $reasons.Add("$inherited inherited entries") | Out-Null }
   if ($denied -gt 0) { $reasons.Add('a deny entry exists') | Out-Null }
 
@@ -273,7 +277,7 @@ function Test-ProtectedPath {
   return $state
 }
 
-$protected = New-Object System.Collections.Generic.List[object]
+$protected = [System.Collections.Generic.List[object]]::new()
 if ($homeDir) {
   $protected.Add((Test-ProtectedPath -Path $homeDir -Label 'home' -Required $true))
   $protected.Add((Test-ProtectedPath -Path (Join-Path $homeDir 'config.json') -Label 'config' -Required $true))
@@ -287,8 +291,8 @@ if (-not $homeDir) {
   $configGate = 'NOT RUN'
   $configDetail = 'home path is unknown; pass -HomePath'
 } else {
-  $failed = @($protected | Where-Object { $_.result -eq 'FAIL' })
-  $configMissing = @($protected | Where-Object { $_.label -eq 'config' -and -not $_.exists }).Count -gt 0
+  $failed = @($protected.ToArray() | Where-Object { $_.result -eq 'FAIL' })
+  $configMissing = @($protected.ToArray() | Where-Object { $_.label -eq 'config' -and -not $_.exists }).Count -gt 0
   if ($configMissing) {
     $configGate = 'FAIL'
     $configDetail = 'config.json is missing; run `pocketpet up` first (the probe never reads its content)'
@@ -361,8 +365,8 @@ if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
     @{ Name = 'PocketPet Bridge TCP'; Protocol = 'TCP'; LocalPort = [string]$Port },
     @{ Name = 'PocketPet Bridge mDNS'; Protocol = 'UDP'; LocalPort = '5353' }
   )
-  $issues = New-Object System.Collections.Generic.List[string]
-  $ruleInfo = New-Object System.Collections.Generic.List[object]
+  $issues = [System.Collections.Generic.List[string]]::new()
+  $ruleInfo = [System.Collections.Generic.List[object]]::new()
   try {
     foreach ($expected in $expectedRules) {
       $rules = @(Get-NetFirewallRule -DisplayName $expected.Name -ErrorAction SilentlyContinue | Where-Object { $_ })
@@ -406,7 +410,7 @@ if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
         $issues.Add("$($expected.Name) program scope could not be compared because node.exe was not resolved; pass -NodePath") | Out-Null
       }
     }
-    $firewallInfo.rules = @($ruleInfo)
+    $firewallInfo.rules = $ruleInfo.ToArray()
     if ($issues.Count -eq 0) {
       $firewallGate = 'PASS'
       $firewallDetail = "Private-profile inbound allow rules verified for TCP $Port and mDNS UDP 5353"
@@ -473,7 +477,7 @@ function ConvertTo-DnsLabel {
 
 function Read-DnsName {
   param([byte[]]$Packet, [int]$Offset)
-  $labels = New-Object System.Collections.Generic.List[string]
+  $labels = [System.Collections.Generic.List[string]]::new()
   $position = $Offset
   $next = $Offset
   $jumped = $false
@@ -504,8 +508,8 @@ function Read-DnsName {
 
 function Get-MdnsAnswers {
   param([byte[]]$Packet, [string]$Name)
-  $answers = New-Object System.Collections.Generic.List[string]
-  if ($Packet.Length -lt 12) { return $answers }
+  $answers = [System.Collections.Generic.List[string]]::new()
+  if ($Packet.Length -lt 12) { return $answers.ToArray() }
   $questions = ([int]$Packet[4] * 256) + [int]$Packet[5]
   $records = ([int]$Packet[6] * 256) + [int]$Packet[7]
   $offset = 12
@@ -526,7 +530,7 @@ function Get-MdnsAnswers {
     }
     $offset += $length
   }
-  return $answers
+  return $answers.ToArray()
 }
 
 function Resolve-MdnsDirect {
@@ -562,7 +566,7 @@ function Resolve-MdnsDirect {
     $endpoint = New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse('224.0.0.251'), 5353)
     $null = $udp.Send($query, $query.Length, $endpoint)
 
-    $answers = New-Object System.Collections.Generic.List[string]
+    $answers = [System.Collections.Generic.List[string]]::new()
     $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
     while ([DateTime]::UtcNow -lt $deadline) {
       if (-not $udp.Client.Poll(100000, [System.Net.Sockets.SelectMode]::Read)) { continue }
@@ -573,7 +577,7 @@ function Resolve-MdnsDirect {
       }
       if ($answers.Count -gt 0) { break }
     }
-    return $answers
+    return $answers.ToArray()
   } finally {
     $udp.Close()
   }
@@ -656,14 +660,14 @@ $result = [ordered]@{
   config = [ordered]@{
     home = (Hide-Text $homeDir)
     exists = [bool]($homeDir -and (Test-Path -LiteralPath $homeDir))
-    paths = @($protected)
+    paths = $protected.ToArray()
   }
   service = $serviceInfo
   firewall = $firewallInfo
   bridge = $healthInfo
   mdns = $mdnsInfo
   summary = $summary
-  gates = @($gates)
+  gates = $gates.ToArray()
 }
 
 $result | ConvertTo-Json -Depth 8
