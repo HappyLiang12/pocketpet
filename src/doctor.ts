@@ -68,13 +68,13 @@ const QODER_GATE = "real-app gate NOT RUN";
  * required event is a FAIL. The check only reads settings files, and its detail
  * never claims the hook was executed.
  */
-function qoderHookCheck(settingsPaths: string[]): Check {
+function qoderHookCheck(settingsPaths: string[], platformName: NodeJS.Platform): Check {
   const roots = settingsPaths.filter((settingsPath) => existsSync(dirname(settingsPath)));
   if (roots.length === 0) return { name: "qoder hooks", status: "WARN", detail: `Qoder not detected; ${QODER_GATE}` };
   const rootNames = roots.map((settingsPath) => dirname(settingsPath));
   const problems: string[] = [];
   for (const settingsPath of roots) {
-    const status = qoderHookEventStatus(settingsPath);
+    const status = qoderHookEventStatus(settingsPath, platformName);
     if (status === null) {
       problems.push(`${dirname(settingsPath)}: invalid settings JSON`);
       continue;
@@ -247,7 +247,7 @@ export async function doctorChecks(opts: Options): Promise<Check[]> {
 
   const settingsPath = opts.settingsPath ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
   checks.push(claudeHookCheck(settingsPath, platformName));
-  checks.push(qoderHookCheck(opts.qoderSettingsPaths ?? qoderSettingsPaths()));
+  checks.push(qoderHookCheck(opts.qoderSettingsPaths ?? qoderSettingsPaths(), platformName));
 
   const pets = scanLocalPets(opts.localPetDirs ?? [join(opts.home, "pets"), join(homedir(), ".codex", "pets"), join(homedir(), ".petdex", "pets")]);
   checks.push(pets.length > 0 ? { name: "pets", status: "PASS", detail: `${pets.length} local pet(s)` } : { name: "pets", status: "WARN", detail: "none found; run npx petdex install boba" });

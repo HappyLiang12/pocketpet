@@ -20,6 +20,30 @@ export const QODER_HOOK_EVENTS = [
 /** Substring every PocketPet Qoder hook command contains; used by doctor. */
 export const qoderHookMarker = "hook qoder";
 
+/** The linked command written on macOS/Linux and by the TypeScript entry fallback. */
+const BARE_COMMAND = "pocketpet hook qoder";
+/** Quoted absolute form written on Windows: `"<node>" "<cli.js>" hook qoder`. */
+const WINDOWS_COMMAND = /^"[^"]+" "[^"]+" hook qoder$/;
+const ABSOLUTE_WINDOWS_PATH = /^(?:[A-Za-z]:[\\/]|\\\\)/;
+
+/** Matches either PocketPet form, regardless of the current platform. */
+function isPocketPetQoderCommand(command: string): boolean {
+  return command === BARE_COMMAND || WINDOWS_COMMAND.test(command);
+}
+
+/**
+ * True when a settings entry is PocketPet's Qoder hook. On Windows only the
+ * absolute quoted form is trustworthy: a bare `pocketpet hook qoder` may rely
+ * on a PATH the Qoder app does not inherit. macOS/Linux keep the historical
+ * marker match, which also accepts the shell-quoted macOS form.
+ */
+export function isQoderHookCommand(command: unknown, platformName: NodeJS.Platform = process.platform): command is string {
+  if (typeof command !== "string") return false;
+  if (platformName !== "win32") return command.includes(qoderHookMarker);
+  const match = /^"([^"]+)" "([^"]+)" hook qoder$/.exec(command);
+  return Boolean(match && ABSOLUTE_WINDOWS_PATH.test(match[1]) && ABSOLUTE_WINDOWS_PATH.test(match[2]));
+}
+
 type Hook = { type?: string; command?: string; timeout?: number };
 type Entry = { hooks?: unknown };
 
@@ -44,9 +68,15 @@ export function qoderSettingsPaths(home = homedir()): string[] {
  * Idempotently adds the PocketPet command hook to every supported event in a
  * Qoder settings file. Unrelated settings, `hooksConfig`, and foreign hooks are
  * preserved verbatim; anything that does not look like a settings object is
- * rejected instead of being overwritten.
+ * rejected instead of being overwritten. On Windows a stale PocketPet command
+ * (for example the bare linked form written by an older install) is rewritten
+ * in place, so re-running never adds a duplicate hook.
  */
-export function installQoderHooks(settingsPath: string, command: string): { added: string[]; already: string[] } {
+export function installQoderHooks(
+  settingsPath: string,
+  command: string,
+  platformName: NodeJS.Platform = process.platform,
+): { added: string[]; already: string[]; replaced: string[] } {
   let settings: Record<string, unknown> = {};
   if (existsSync(settingsPath)) {
     let parsed: unknown;
@@ -65,15 +95,36 @@ export function installQoderHooks(settingsPath: string, command: string): { adde
 
   const added: string[] = [];
   const already: string[] = [];
+  const replaced: string[] = [];
   for (const event of QODER_HOOK_EVENTS) {
     const current = hooks[event];
     if (current !== undefined && current !== null && !Array.isArray(current)) throw invalidSettings(settingsPath);
     const entries: Entry[] = Array.isArray(current) ? (current as Entry[]) : [];
-    const present = entries.some((entry) =>
-      isRecord(entry) && Array.isArray(entry.hooks) && entry.hooks.some((hook: unknown) => isRecord(hook) && hook.type === "command" && hook.command === command),
-    );
+    let present = false;
+    let upgraded = false;
+    for (const entry of entries) {
+      if (!isRecord(entry) || !Array.isArray(entry.hooks)) continue;
+      for (const hook of entry.hooks as unknown[]) {
+        if (!isRecord(hook) || hook.type !== "command" || typeof hook.command !== "string") continue;
+        if (hook.command === command) {
+          present = true;
+          continue;
+        }
+        // Only Windows rewrites stale entries; macOS/Linux behavior is unchanged.
+        if (platformName === "win32" && isPocketPetQoderCommand(hook.command)) {
+          hook.command = command;
+          upgraded = true;
+        }
+      }
+    }
     if (present) {
       already.push(event);
+      if (upgraded) replaced.push(event);
+      continue;
+    }
+    if (upgraded) {
+      hooks[event] = entries;
+      replaced.push(event);
       continue;
     }
     entries.push({ hooks: [{ type: "command", command, timeout: 2 } satisfies Hook] });
@@ -82,7 +133,7 @@ export function installQoderHooks(settingsPath: string, command: string): { adde
   }
 
   settings.hooks = hooks;
-  if (added.length === 0) return { added, already };
+  if (added.length === 0 && replaced.length === 0) return { added, already, replaced };
 
   // Follow symlinks so the rename replaces the real settings file instead of
   // the link, and keep the existing owner/group/other bits. A fresh Qoder
@@ -102,18 +153,20 @@ export function installQoderHooks(settingsPath: string, command: string): { adde
     }
     throw error;
   }
-  return { added, already };
+  return { added, already, replaced };
 }
 
 export type QoderHookStatus = { present: string[]; missing: string[] };
 
 /**
- * Reports which required events already have a PocketPet command hook. A hook
- * matches when its command contains `hook qoder`, so both the compiled absolute
- * command and the source `pocketpet hook qoder` fallback count. Returns null
- * when the file is not valid settings JSON.
+ * Reports which required events already have a PocketPet command hook. macOS
+ * and Linux match any command containing `hook qoder`, so both the compiled
+ * absolute command and the source `pocketpet hook qoder` fallback count. Windows
+ * requires the quoted absolute form, because the bare command relies on a PATH
+ * the Qoder app may not inherit. Returns null when the file is not valid
+ * settings JSON.
  */
-export function qoderHookEventStatus(settingsPath: string): QoderHookStatus | null {
+export function qoderHookEventStatus(settingsPath: string, platformName: NodeJS.Platform = process.platform): QoderHookStatus | null {
   if (!existsSync(settingsPath)) return { present: [], missing: [...QODER_HOOK_EVENTS] };
   let parsed: unknown;
   try {
@@ -133,7 +186,7 @@ export function qoderHookEventStatus(settingsPath: string): QoderHookStatus | nu
         (entry) =>
           isRecord(entry) &&
           Array.isArray(entry.hooks) &&
-          entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && typeof hook.command === "string" && hook.command.includes(qoderHookMarker)),
+          entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && isQoderHookCommand(hook.command, platformName)),
       );
     (wired ? present : missing).push(event);
   }
