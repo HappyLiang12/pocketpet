@@ -15,7 +15,6 @@ import { doctorChecks } from "./doctor.js";
 import { pairingCopy, pickLanguage } from "./i18n.js";
 import { askYesNo, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
 import { platform } from "./platform/index.js";
-import { SERVICE_LABEL } from "./platform/darwin/service.js";
 import type { ServiceConfig } from "./platform/types.js";
 import { startBridge, type Bridge } from "./server.js";
 
@@ -481,7 +480,7 @@ async function runUp(args: string[]): Promise<number> {
       console.error("Run `pocketpet service install` to reload it, or `pocketpet run` in the foreground to see the error.");
       return 1;
     }
-    console.log(`Bridge service is running (${SERVICE_LABEL}).`);
+    console.log(`Bridge service is running (${platform.service.label}).`);
     printPairing({ port: config.port, token: config.token, qrHost: options.qrHost, open: !options.noOpen, keepRunning: true });
     return 0;
   }
@@ -496,7 +495,7 @@ async function runUp(args: string[]): Promise<number> {
 function serviceFailureMessage(action: "install" | "uninstall", error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
-  return `Could not ${action} the bridge service (${SERVICE_LABEL}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
+  return `Could not ${action} the bridge service (${platform.service.label}). Build the CLI with \`npm run build\` and retry \`pocketpet service ${action}\`.${refusal}`;
 }
 
 async function runService(action: string | undefined): Promise<number> {
@@ -521,7 +520,7 @@ async function runService(action: string | undefined): Promise<number> {
       console.error(serviceFailureMessage("install", error));
       return 1;
     }
-    console.log(`Installed ${SERVICE_LABEL}. The bridge starts at login and keeps running.`);
+    console.log(`Installed ${platform.service.label}. The bridge starts at login and keeps running.`);
     return 0;
   }
   if (action === "uninstall") {
@@ -531,11 +530,11 @@ async function runService(action: string | undefined): Promise<number> {
       console.error(serviceFailureMessage("uninstall", error));
       return 1;
     }
-    console.log(`Removed ${SERVICE_LABEL}.`);
+    console.log(`Removed ${platform.service.label}.`);
     return 0;
   }
   const running = (await platform.service.status(serviceConfig)).running;
-  console.log(running ? `Bridge service is running (${SERVICE_LABEL}).` : `Bridge service is not running (${SERVICE_LABEL}).`);
+  console.log(running ? `Bridge service is running (${platform.service.label}).` : `Bridge service is not running (${platform.service.label}).`);
   return running ? 0 : 1;
 }
 
