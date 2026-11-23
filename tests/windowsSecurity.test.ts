@@ -1,0 +1,124 @@
+import { describe, expect, it, vi } from "vitest";
+import type { CommandResult, CommandRunner } from "../src/platform/types.js";
+import { currentUserSid, WindowsSecurityError, windowsSecurity } from "../src/platform/windows/security.js";
+
+const SID = "S-1-5-21-42";
+
+type PowerShellCall = { command: string; args: string[] };
+
+/** Runner that answers the SID probe and records every PowerShell call. */
+function sidRunner(protection: CommandResult = { status: 0, stdout: "", stderr: "" }) {
+  const calls: PowerShellCall[] = [];
+  const run: CommandRunner = (command, args) => {
+    calls.push({ command, args });
+    if (args.includes("-Command")) return { status: 0, stdout: `${SID}\n`, stderr: "" };
+    return protection;
+  };
+  return { run, calls };
+}
+
+function decode(call: PowerShellCall): string {
+  expect(call.command).toBe("powershell.exe");
+  expect(call.args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-EncodedCommand"]);
+  return Buffer.from(call.args[3], "base64").toString("utf16le");
+}
+
+describe("Windows private paths", () => {
+  it("replaces inheritance with one current-user ACE for a file", () => {
+    const { run, calls } = sidRunner();
+    windowsSecurity.protectFile("C:\\Users\\happy\\.pocketpet\\config.json", run);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].args[2]).toBe("-Command");
+    expect(calls[0].args[3]).toBe("([WindowsIdentity]::GetCurrent()).User.Value");
+    const script = decode(calls[1]);
+    expect(script).toContain("SetAccessRuleProtection($true,$false)");
+    expect(script).toContain(SID);
+    expect(script).toContain("RemoveAccessRule");
+    expect(script).toContain("Set-Acl");
+    expect(script).toContain("FileSystemAccessRule");
+    expect(script).toContain("'FullControl'");
+    expect(script).toContain("'None','None','Allow'");
+    expect(script).toContain("Access.Count -ne 1");
+    expect(script).toContain("AreAccessRulesProtected");
+    // Administrators and SYSTEM may take ownership but are never granted by default.
+    expect(script).not.toMatch(/S-1-5-32|Administrators|SYSTEM/);
+  });
+
+  it("uses inheritable directory ACEs for home and logs", () => {
+    const home = "C:\\Users\\happy\\.pocketpet";
+    const recorder = sidRunner();
+    windowsSecurity.protectHome(home, recorder.run);
+    const homeScript = decode(recorder.calls.at(-1) as PowerShellCall);
+    expect(homeScript).toContain("ContainerInherit,ObjectInherit");
+    expect(homeScript).toContain(home);
+
+    const logsRecorder = sidRunner();
+    windowsSecurity.protectLogs(home, logsRecorder.run);
+    const logsScript = decode(logsRecorder.calls.at(-1) as PowerShellCall);
+    expect(logsScript).toContain("ContainerInherit,ObjectInherit");
+    expect(logsScript).toContain("logs");
+  });
+
+  it("escapes single quotes in the protected path", () => {
+    const { run, calls } = sidRunner();
+    windowsSecurity.protectFile("C:\\Users\\o'brien\\.pocketpet\\config.json", run);
+    const script = decode(calls[1]);
+    expect(script).toContain("o''brien");
+  });
+
+  it("resolves the trimmed SID through powershell without a profile", () => {
+    const { run, calls } = sidRunner();
+    expect(currentUserSid(run)).toBe(SID);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toBe("powershell.exe");
+    expect(calls[0].args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
+  });
+
+  it("throws a typed error when the SID cannot be resolved, before touching any ACL", () => {
+    const run = vi.fn((_command: string, _args: string[]) => ({ status: 1, stdout: "", stderr: "denied" }));
+    let thrown: unknown;
+    try {
+      windowsSecurity.protectFile("C:\\x", run);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(WindowsSecurityError);
+    const failure = thrown as WindowsSecurityError;
+    expect(failure.operation).toBe("resolve-sid");
+    expect(failure.path).toBeNull();
+    expect(failure.message).toMatch(/SID/i);
+    // Only the SID probe ran; no protection command was attempted.
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][1]).toContain("-Command");
+  });
+
+  it("rejects a malformed SID before touching any ACL", () => {
+    const calls: PowerShellCall[] = [];
+    const bad = vi.fn((command: string, args: string[]) => {
+      calls.push({ command, args });
+      return { status: 0, stdout: "SNEAKY-VALUE\n", stderr: "" };
+    });
+    expect(() => windowsSecurity.protectFile("C:\\x", bad)).toThrow(/SID/i);
+    expect(bad).toHaveBeenCalledTimes(1);
+    expect(calls[0].args[2]).toBe("-Command");
+  });
+
+  it("throws when DACL replacement or verification fails", () => {
+    const { run } = sidRunner({ status: 3, stdout: "", stderr: "verification failed" });
+    let thrown: unknown;
+    try {
+      windowsSecurity.protectFile("C:\\Users\\happy\\.pocketpet\\config.json", run);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(WindowsSecurityError);
+    const failure = thrown as WindowsSecurityError;
+    expect(failure.operation).toBe("protect");
+    expect(failure.path).toBe("C:\\Users\\happy\\.pocketpet\\config.json");
+    expect(failure.exitCode).toBe(3);
+    expect(failure.message).toMatch(/ACL/i);
+    // Command output is not echoed; errors stay path-only.
+    expect(failure.message).not.toContain("verification failed");
+  });
+});

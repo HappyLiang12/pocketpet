@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_APPEARANCE, normalizeAppearance, type Appearance } from "./appearance.js";
+import { platform } from "./platform/index.js";
+import type { PrivatePaths } from "./platform/types.js";
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -34,11 +36,23 @@ export function configPath(home: string): string {
   return join(home, "config.json");
 }
 
-export function ensureConfig(home: string, env: NodeJS.ProcessEnv = process.env): Config {
+/**
+ * Create the home layout and tighten its protection before any token is
+ * written. The home is protected first so Windows children created afterwards
+ * inherit the current-user-only DACL.
+ */
+export function ensureConfig(
+  home: string,
+  env: NodeJS.ProcessEnv = process.env,
+  security: PrivatePaths = platform.security,
+): Config {
+  mkdirSync(home, { recursive: true, mode: DIR_MODE });
+  security.protectHome(home);
   mkdirSync(join(home, "pets"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "cache", "petdex"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "logs"), { recursive: true, mode: DIR_MODE });
-  if (existsSync(configPath(home))) return loadConfig(home);
+  security.protectLogs(home);
+  if (existsSync(configPath(home))) return loadConfig(home, security);
   const config: Config = {
     token: randomBytes(32).toString("base64url"),
     port: initialPort(env),
@@ -47,12 +61,18 @@ export function ensureConfig(home: string, env: NodeJS.ProcessEnv = process.env)
     quietHours: null,
     appearance: normalizeAppearance(DEFAULT_APPEARANCE),
   };
-  saveConfig(home, config);
+  saveConfig(home, config, security);
   return config;
 }
 
-export function loadConfig(home: string): Config {
-  const parsed = JSON.parse(readFileSync(configPath(home), "utf8")) as Partial<Config>;
+/**
+ * Existing configs are tightened on every load. A protection failure throws, so
+ * the bridge refuses to start with a weak config instead of reading the token.
+ */
+export function loadConfig(home: string, security: PrivatePaths = platform.security): Config {
+  const target = configPath(home);
+  security.protectFile(target);
+  const parsed = JSON.parse(readFileSync(target, "utf8")) as Partial<Config>;
   if (typeof parsed.token !== "string" || parsed.token.length < 16) throw new Error("config.token missing or too short");
   const port = parsed.port ?? 7788;
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("config.port invalid");
@@ -66,19 +86,36 @@ export function loadConfig(home: string): Config {
   };
 }
 
-export function saveConfig(home: string, config: Config): void {
+/**
+ * Write the config atomically and fail closed. The token-bearing temp file is
+ * protected and verified before it can replace the live config; after the
+ * rename the final path is protected again. If the rename happened but its
+ * protection cannot be confirmed, the config is removed rather than trusted.
+ */
+export function saveConfig(home: string, config: Config, security: PrivatePaths = platform.security): void {
   mkdirSync(home, { recursive: true, mode: DIR_MODE });
   const target = configPath(home);
   const mode = existsSync(target) ? statSync(target).mode & 0o777 : FILE_MODE;
   const tmpPath = `${target}.tmp`;
+  let renamed = false;
   try {
     writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", { mode });
+    security.protectFile(tmpPath);
     renameSync(tmpPath, target);
+    renamed = true;
+    security.protectFile(target);
   } catch (error) {
     try {
       unlinkSync(tmpPath);
     } catch {
       // The temp file may never have been created.
+    }
+    if (renamed) {
+      try {
+        unlinkSync(target);
+      } catch {
+        // The config may already be gone.
+      }
     }
     throw error;
   }
