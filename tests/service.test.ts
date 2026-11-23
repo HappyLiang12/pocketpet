@@ -71,7 +71,7 @@ describe.skipIf(process.platform === "win32")("servicePath", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("servicePlist", () => {
+describe("servicePlist", () => {
   it("contains the label, program arguments, environment, and log settings", () => {
     const cfg: ServiceConfig = {
       home: "/Users/fold pet/home",
@@ -111,7 +111,7 @@ describe.skipIf(process.platform === "win32")("servicePlist", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("installService", () => {
+describe("installService", () => {
   it("writes the plist, pre-creates the log with tight modes, and reloads the service", async () => {
     const cfg = setupConfig();
     const { calls, runner } = fakeRunner([1, 0]);
@@ -173,7 +173,7 @@ describe.skipIf(process.platform === "win32")("installService", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("uninstallService", () => {
+describe("uninstallService", () => {
   it("boots out, ignoring failure, then removes the plist", async () => {
     const cfg = setupConfig();
     const installed = fakeRunner();
@@ -194,7 +194,7 @@ describe.skipIf(process.platform === "win32")("uninstallService", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("serviceStatus", () => {
+describe("serviceStatus", () => {
   it("returns true when launchctl print succeeds", async () => {
     const cfg = setupConfig();
     const { calls, runner } = fakeRunner([0]);
@@ -217,7 +217,7 @@ describe.skipIf(process.platform === "win32")("serviceStatus", () => {
   });
 });
 
-describe.skipIf(process.platform === "win32")("darwinService", () => {
+describe("darwinService", () => {
   it("reports installed but stopped when the plist exists outside the data home", async () => {
     const plistPath = externalPlistPath();
     const cfg = setupConfig({ plistPath });

@@ -150,7 +150,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** True when every PocketPet hook event is wired as a command hook in the Claude settings file. */
-export function hasPocketPetHooks(settingsPath: string): boolean {
+export function hasPocketPetHooks(settingsPath: string, platformName: NodeJS.Platform = process.platform): boolean {
   if (!existsSync(settingsPath)) return false;
   let parsed: unknown;
   try {
@@ -167,7 +167,7 @@ export function hasPocketPetHooks(settingsPath: string): boolean {
       (entry) =>
         isRecord(entry) &&
         Array.isArray(entry.hooks) &&
-        entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && isClaudeHookCommand(hook.command)),
+        entry.hooks.some((hook) => isRecord(hook) && hook.type === "command" && isClaudeHookCommand(hook.command, platformName)),
     );
   });
 }
@@ -256,6 +256,7 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
   try {
     const result = installClaudeHooks(settingsPath, claudeHookCommand(fileURLToPath(import.meta.url), process.execPath));
     console.log(`Claude Code hooks added: ${result.added.join(", ") || "none"}`);
+    if (result.replaced.length > 0) console.log(`Claude Code hooks upgraded: ${result.replaced.join(", ")}`);
   } catch {
     console.error("Claude Code hooks: could not update settings; continuing without hooks.");
   }
@@ -329,6 +330,28 @@ export async function liveLocalHostname(port: number): Promise<string | null> {
     return typeof value === "string" && value.length > 0 ? value : null;
   } catch {
     return null;
+  }
+}
+
+/** The service listener can answer `/health` before its mDNS advertisement lands. */
+const SERVICE_HOSTNAME_RETRY_MS = 2000;
+const SERVICE_HOSTNAME_POLL_MS = 250;
+
+/**
+ * Bounded retry for the live gated name in service mode. Returns the first name
+ * the bridge reports, or null after the deadline so IP/USB pairing stays usable.
+ */
+export async function liveLocalHostnameUntil(
+  port: number,
+  timeoutMs = SERVICE_HOSTNAME_RETRY_MS,
+  intervalMs = SERVICE_HOSTNAME_POLL_MS,
+): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await liveLocalHostname(port);
+    if (value) return value;
+    if (Date.now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
 }
 
@@ -477,6 +500,7 @@ async function runInit(): Promise<number> {
   const result = installClaudeHooks(claudeSettingsPath(), claudeHookCommand(fileURLToPath(import.meta.url), process.execPath));
   console.log(`Config: ${configPath(home)}`);
   console.log(`Claude hooks added: ${result.added.join(", ") || "none"}`);
+  if (result.replaced.length > 0) console.log(`Claude hooks upgraded: ${result.replaced.join(", ")}`);
   console.log(`Claude hooks already present: ${result.already.join(", ") || "none"}`);
   installQoderHooksForInit();
   console.log("Next: pocketpet run");
@@ -492,6 +516,8 @@ export type UpDeps = {
   startForeground?: (options: BridgeOptions) => Promise<Bridge>;
   /** Test hook: stop waiting for Ctrl+C immediately. */
   waitForInterrupt?: (bridge: Bridge) => Promise<void>;
+  /** Test hook: bounded retry budget for the Windows service-mode `.local`. */
+  hostnameRetryMs?: number;
 };
 
 export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> {
@@ -574,15 +600,22 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
         return 1;
       }
       console.log(`Bridge service is running (${target.service.label}).`);
+      // The service process owns the mDNS responder; its health is the only live
+      // source. Windows needs a short retry because health can answer before the
+      // advertisement resolves. macOS keeps the previous single read.
+      const liveHostname =
+        platformName === "win32"
+          ? await liveLocalHostnameUntil(config.port, deps.hostnameRetryMs)
+          : await liveLocalHostname(config.port);
       printPairing({
         port: config.port,
         token: config.token,
         qrHost: options.qrHost,
         open: !options.noOpen,
         keepRunning: true,
-        // The service process owns the Windows mDNS responder; its health is the
-        // only live source. The adapter fallback keeps macOS behavior unchanged.
-        hostname: (await liveLocalHostname(config.port)) ?? target.host.localHostname(),
+        // The adapter fallback keeps macOS behavior unchanged and leaves IP/USB
+        // pairing usable when no name is advertised.
+        hostname: liveHostname ?? target.host.localHostname(),
       });
       return 0;
     }
@@ -725,7 +758,7 @@ async function runServer(args: string[] = []): Promise<number> {
 }
 
 async function runDoctor(): Promise<number> {
-  const checks = await doctorChecks({ home: pocketpetHome() });
+  const checks = await doctorChecks({ home: pocketpetHome(), cliPath: fileURLToPath(import.meta.url) });
   for (const check of checks) console.log(`${check.status} ${check.name}: ${check.detail}`);
   return checks.some((check) => check.status === "FAIL") ? 1 : 0;
 }

@@ -6,7 +6,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { main, hasPocketPetHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
+import { liveLocalHostnameUntil, main, hasPocketPetHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
@@ -443,6 +443,121 @@ describe("Windows service CLI fallback", () => {
       expect(output).toContain("Bridge service is running (PocketPet Bridge).");
       expect(output).toContain(`http://happy-pc.local:${address.port}/?token=${token}`);
       expect(output).not.toContain("Starting the bridge in the foreground.");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("retries the live gated .local briefly when health is up before advertisement", async () => {
+    // The listener answers before startAdvertisement resolves, so the first
+    // post-health reads report null; the retry must catch the name when it lands.
+    let probes = 0;
+    const server = createHttpServer((_req, res) => {
+      probes += 1;
+      if (probes === 1) {
+        res.writeHead(503);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: 0, localHostname: probes < 5 ? null : "happy-pc.local" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
+      const token = writeConfig(address.port);
+      const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
+
+      const { result, output } = await capture(() =>
+        runUp(["--yes", "--no-hooks", "--no-open"], {
+          platform,
+          platformName: "win32",
+          hostnameRetryMs: 1000,
+          waitForInterrupt: async () => {},
+        }),
+      );
+
+      expect(result).toBe(0);
+      expect(probes).toBeGreaterThanOrEqual(5);
+      expect(output).toContain(`http://happy-pc.local:${address.port}/?token=${token}`);
+      expect(output).not.toContain("Starting the bridge in the foreground.");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("falls back to the IP URL when the live .local never appears", async () => {
+    let probes = 0;
+    const server = createHttpServer((_req, res) => {
+      probes += 1;
+      if (probes === 1) {
+        res.writeHead(503);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: 0, localHostname: null }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
+      const token = writeConfig(address.port);
+      const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
+
+      const started = Date.now();
+      const { result, output } = await capture(() =>
+        runUp(["--yes", "--no-hooks", "--no-open"], {
+          platform,
+          platformName: "win32",
+          hostnameRetryMs: 100,
+          waitForInterrupt: async () => {},
+        }),
+      );
+      const elapsed = Date.now() - started;
+
+      expect(result).toBe(0);
+      expect(elapsed).toBeLessThan(2000);
+      expect(output).toContain(`/?token=${token}`);
+      expect(output).not.toContain(".local");
+      expect(output).toContain("Bridge service is running (PocketPet Bridge).");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("keeps the macOS service pairing on a single live read", async () => {
+    let probes = 0;
+    const server = createHttpServer((_req, res) => {
+      probes += 1;
+      if (probes === 1) {
+        res.writeHead(503);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: 0, localHostname: null }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
+      writeConfig(address.port);
+      const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
+
+      const started = Date.now();
+      const { result } = await capture(() =>
+        runUp(["--yes", "--no-hooks", "--no-open"], {
+          platform,
+          platformName: "darwin",
+          hostnameRetryMs: 5000,
+          waitForInterrupt: async () => {},
+        }),
+      );
+
+      expect(result).toBe(0);
+      expect(Date.now() - started).toBeLessThan(2000);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
