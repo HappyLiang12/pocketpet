@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_APPEARANCE } from "../src/appearance.js";
-import { setupAssets, setupDeniedHtml, setupPageHtml } from "../src/setupPage.js";
+import { setupAssets, setupDeniedHtml, setupPageHtml, unauthorizedHtml } from "../src/setupPage.js";
 
 const base = {
   qrSvg: '<svg xmlns="http://www.w3.org/2000/svg"><rect /></svg>',
@@ -196,6 +196,22 @@ describe("setupDeniedHtml", () => {
     expect(setupDeniedHtml(7788, "en")).toContain("computer");
     expect(setupDeniedHtml(7788, "zh-Hant")).toContain("電腦");
     expect(setupDeniedHtml(7788, "zh-Hans")).toContain("电脑");
+  });
+});
+
+describe("unauthorizedHtml", () => {
+  it("explains the cleaned URL and points to setup in all languages", () => {
+    for (const lang of ["en", "zh-Hant", "zh-Hans"] as const) {
+      const html = unauthorizedHtml(7788, lang);
+      expect(html).toContain(`<html lang="${lang}">`);
+      expect(html).toContain("http://127.0.0.1:7788/setup");
+      expect(html).not.toContain("?token=");
+      expect(html).not.toContain("<script");
+      expect(html).not.toMatch(/\bMac\b/);
+    }
+    expect(unauthorizedHtml(7788, "en")).toContain("HttpOnly");
+    expect(unauthorizedHtml(7788, "zh-Hant")).toContain("尚未配對");
+    expect(unauthorizedHtml(7788, "zh-Hans")).toContain("尚未配对");
   });
 });
 

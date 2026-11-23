@@ -15,7 +15,7 @@ import { pickLanguage } from "./i18n.js";
 import { pairingLinks } from "./onboarding.js";
 import { platform } from "./platform/index.js";
 import type { HostIdentity } from "./platform/types.js";
-import { setupAssets, setupDeniedHtml, setupPageHtml } from "./setupPage.js";
+import { setupAssets, setupDeniedHtml, setupPageHtml, unauthorizedHtml } from "./setupPage.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
 
@@ -65,6 +65,15 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 }
 function text(res: ServerResponse, status: number, body: string): void {
   res.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+  res.end(body);
+}
+function html(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    "content-type": "text/html; charset=utf-8",
+    "content-length": Buffer.byteLength(body),
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+  });
   res.end(body);
 }
 async function readBody(req: IncomingMessage, limit = 64 * 1024): Promise<string> {
@@ -349,7 +358,13 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
         if (!file || !existsSync(file)) return text(res, 404, "not found");
         return serveFile(res, file);
       }
-      if (!isAuthorized(req, url, config.token)) return text(res, 401, "unauthorized");
+      if (!isAuthorized(req, url, config.token)) {
+        if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+          const lang = pickLanguage(req.headers["accept-language"], url.searchParams.get("lang"));
+          return html(res, 401, unauthorizedHtml(port, lang));
+        }
+        return text(res, 401, "unauthorized");
+      }
       if (url.searchParams.get("token") === config.token) setTokenCookie(res, config.token);
 
       if (req.method === "GET" && (path === "/" || path === "/index.html")) {
