@@ -399,9 +399,17 @@ function webDistPath(): string {
 
 function waitForInterrupt(bridge: Bridge): Promise<void> {
   return new Promise<void>((resolveStop) => {
-    process.once("SIGINT", () => {
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      // close() also stops the mDNS responder, so no signal leaves `.local` served.
       bridge.close().then(() => resolveStop(), () => resolveStop());
-    });
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
   });
 }
 
@@ -529,7 +537,7 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
 
   if (fellBack) console.log("Starting the bridge in the foreground.");
   const startForeground = deps.startForeground ?? startBridge;
-  const bridge = await startForeground({ home, config, webDist: webDistPath() });
+  const bridge = await startForeground({ home, config, webDist: webDistPath(), host: target.host });
   printPairing({
     port: bridge.port,
     token: config.token,
@@ -652,7 +660,7 @@ async function runServer(args: string[] = []): Promise<number> {
     console.log(`Created config: ${target}`);
     console.log("Claude Code hooks are not installed yet; run `pocketpet init` to add them.");
   }
-  const bridge = await startBridge({ home, config, webDist: webDistPath() });
+  const bridge = await startBridge({ home, config, webDist: webDistPath(), host: platform.host });
   if (serviceMode) {
     // The launchd job redirects stdout to a log; never write URLs or the token there.
     console.log(`PocketPet bridge listening on port ${bridge.port}`);

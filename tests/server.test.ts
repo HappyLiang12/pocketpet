@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { ensureConfig } from "../src/config.js";
+import { urlsForPort } from "../src/net.js";
+import type { HostIdentity } from "../src/platform/types.js";
 import { startBridge, setupServiceRunning, type Bridge } from "../src/server.js";
 
 let home = "";
@@ -613,5 +615,77 @@ describe("bridge server security", () => {
     } finally {
       await second.close();
     }
+  });
+});
+
+describe("bridge host lifecycle", () => {
+  async function withHost(host: HostIdentity, work: (local: Bridge) => Promise<void>): Promise<void> {
+    const local = await startBridge({
+      home, config: bridge.config, webDist: join(home, "web"), port: 0, host,
+      fetchImpl: petdexFetch, probeService,
+    });
+    try {
+      await work(local);
+    } finally {
+      await local.close();
+    }
+  }
+
+  it("advertises after listen, serves the live .local URL, and stops on close", async () => {
+    const calls: string[] = [];
+    let advertising = false;
+    const host: HostIdentity = {
+      localHostname: () => (advertising ? "happy-pc.local" : null),
+      startAdvertisement: async () => {
+        calls.push("start");
+        advertising = true;
+        return true;
+      },
+      stopAdvertisement: async () => {
+        calls.push("stop");
+        advertising = false;
+      },
+    };
+
+    await withHost(host, async (local) => {
+      expect(calls).toEqual(["start"]);
+      const token = encodeURIComponent(local.config.token);
+      const first = await (await fetch(`http://127.0.0.1:${local.port}/setup`)).text();
+      expect(first).toContain(`http://happy-pc.local:${local.port}/?token=${token}`);
+
+      // The setup page reads the adapter live, so a stopped responder hides the name again.
+      advertising = false;
+      const second = await (await fetch(`http://127.0.0.1:${local.port}/setup`)).text();
+      expect(second).not.toContain("happy-pc.local");
+    });
+
+    expect(calls).toEqual(["start", "stop"]);
+    expect(advertising).toBe(false);
+  });
+
+  it("omits the .local URL when advertisement is refused, keeping IP and USB pairing", async () => {
+    const calls: string[] = [];
+    const host: HostIdentity = {
+      // A refused advertisement must hide the name even if the adapter would report one.
+      localHostname: () => "happy-pc.local",
+      startAdvertisement: async () => {
+        calls.push("start");
+        return false;
+      },
+      stopAdvertisement: async () => {
+        calls.push("stop");
+      },
+    };
+
+    await withHost(host, async (local) => {
+      const token = encodeURIComponent(local.config.token);
+      const html = await (await fetch(`http://127.0.0.1:${local.port}/setup`)).text();
+      expect(html).not.toContain("happy-pc.local");
+      expect(html).toContain(`http://127.0.0.1:${local.port}/?token=${token}`);
+      const [firstIp] = urlsForPort(local.port, local.config.token);
+      if (firstIp) expect(html).toContain(firstIp);
+    });
+
+    expect(calls).toEqual(["start", "stop"]);
   });
 });
