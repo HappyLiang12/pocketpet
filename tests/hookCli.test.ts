@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -86,6 +86,16 @@ describe("pocketpet hook claude", () => {
     } finally {
       rmSync(bare, { recursive: true, force: true });
     }
+  });
+
+  it("does not tighten the config file on the hook read path", () => {
+    if (process.platform === "win32") return;
+    const target = join(home, "config.json");
+    // Matching the owner-only mode is not required for a read; the hook must not chmod.
+    chmodSync(target, 0o644);
+    const input = JSON.stringify({ session_id: "s1", cwd: "/tmp/demo", hook_event_name: "Stop" });
+    expect(() => spawnHook(input)).not.toThrow();
+    expect(statSync(target).mode & 0o777).toBe(0o644);
   });
 
   it("logs a constant message instead of raw config contents", () => {

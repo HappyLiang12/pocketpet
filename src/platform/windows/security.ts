@@ -4,7 +4,7 @@ import type { CommandRunner, PrivatePaths } from "../types.js";
 
 const POWERSHELL = "powershell.exe";
 const SID_SCRIPT = "([WindowsIdentity]::GetCurrent()).User.Value";
-const SID_PATTERN = /^S-1-5-[0-9-]+$/;
+const SID_PATTERN = /^S-1-5-\d+(-\d+)+$/;
 
 export type WindowsSecurityOperation = "resolve-sid" | "protect";
 
@@ -77,10 +77,13 @@ function protectScript(path: string, sid: string, kind: "dir" | "file"): string 
   return [
     "$ErrorActionPreference='Stop';",
     `$p=${psQuote(path)};$sid=${psQuote(sid)};`,
+    // The FileSystemAccessRule constructor overloads that take a string treat it
+    // as an NTAccount name; a SID string must first become a SecurityIdentifier.
+    "$sidObj=New-Object System.Security.Principal.SecurityIdentifier($sid);",
     "$acl=Get-Acl -LiteralPath $p;",
     "$acl.SetAccessRuleProtection($true,$false);",
     "foreach($r in @($acl.Access)){$null=$acl.RemoveAccessRule($r)};",
-    `$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid,'FullControl','${inheritance}','None','Allow')));`,
+    `$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sidObj,'FullControl','${inheritance}','None','Allow')));`,
     "Set-Acl -LiteralPath $p -AclObject $acl;",
     "$check=Get-Acl -LiteralPath $p;",
     "if($check.Access.Count -ne 1){exit 3};",

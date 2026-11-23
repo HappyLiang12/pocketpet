@@ -36,13 +36,25 @@ describe("Windows private paths", () => {
     expect(script).toContain(SID);
     expect(script).toContain("RemoveAccessRule");
     expect(script).toContain("Set-Acl");
-    expect(script).toContain("FileSystemAccessRule");
+    expect(script).toContain("System.Security.Principal.SecurityIdentifier");
+    expect(script).toContain("FileSystemAccessRule($sidObj,");
     expect(script).toContain("'FullControl'");
     expect(script).toContain("'None','None','Allow'");
     expect(script).toContain("Access.Count -ne 1");
     expect(script).toContain("AreAccessRulesProtected");
     // Administrators and SYSTEM may take ownership but are never granted by default.
     expect(script).not.toMatch(/S-1-5-32|Administrators|SYSTEM/);
+  });
+
+  it("builds the ACE from a SecurityIdentifier object, never the SID string", () => {
+    const { run, calls } = sidRunner();
+    windowsSecurity.protectFile("C:\\Users\\happy\\.pocketpet\\config.json", run);
+    const script = decode(calls[1]);
+    // PowerShell's string overload treats the SID as an NTAccount name and throws
+    // IdentityNotMappedException, so the rule must receive a real SID object.
+    expect(script).toContain("New-Object System.Security.Principal.SecurityIdentifier($sid)");
+    expect(script).toContain("FileSystemAccessRule($sidObj,'FullControl'");
+    expect(script).not.toContain("FileSystemAccessRule($sid,");
   });
 
   it("uses inheritable directory ACEs for home and logs", () => {
@@ -102,6 +114,14 @@ describe("Windows private paths", () => {
     expect(() => windowsSecurity.protectFile("C:\\x", bad)).toThrow(/SID/i);
     expect(bad).toHaveBeenCalledTimes(1);
     expect(calls[0].args[2]).toBe("-Command");
+  });
+
+  it("rejects partial S-1-5 prefixes before touching any ACL", () => {
+    for (const sid of ["S-1-5", "S-1-5-", "S-1-5-21-", "S-1-5-abc", "S-1-5-21-42-extra-"]) {
+      const run = vi.fn((_command: string, _args: string[]) => ({ status: 0, stdout: `${sid}\n`, stderr: "" }));
+      expect(() => windowsSecurity.protectFile("C:\\x", run), sid).toThrow(/SID/i);
+      expect(run, sid).toHaveBeenCalledTimes(1);
+    }
   });
 
   it("throws when DACL replacement or verification fails", () => {

@@ -41,18 +41,44 @@ export function configPath(home: string): string {
  * written. The home is protected first so Windows children created afterwards
  * inherit the current-user-only DACL.
  */
-export function ensureConfig(
-  home: string,
-  env: NodeJS.ProcessEnv = process.env,
-  security: PrivatePaths = platform.security,
-): Config {
+function ensurePrivateLayout(home: string, security: PrivatePaths): void {
   mkdirSync(home, { recursive: true, mode: DIR_MODE });
   security.protectHome(home);
   mkdirSync(join(home, "pets"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "cache", "petdex"), { recursive: true, mode: DIR_MODE });
   mkdirSync(join(home, "logs"), { recursive: true, mode: DIR_MODE });
   security.protectLogs(home);
-  if (existsSync(configPath(home))) return loadConfig(home, security);
+}
+
+/**
+ * Startup hardening for an existing install: create the private layout, then
+ * protect the config file before reading it. A protection failure throws, so
+ * the bridge refuses to start with a weak config instead of reading the token.
+ *
+ * Only startup commands (`init`, `up`, `run`, `service`) call this, directly or
+ * through `ensureConfig`. Hook reads use the pure `loadConfig`.
+ */
+export function hardenConfig(home: string, security: PrivatePaths = platform.security): Config {
+  ensurePrivateLayout(home, security);
+  return hardenExistingConfig(home, security);
+}
+
+function hardenExistingConfig(home: string, security: PrivatePaths): Config {
+  security.protectFile(configPath(home));
+  return loadConfig(home);
+}
+
+/**
+ * Startup entry point: harden an existing install or create the first config.
+ * Protection happens before any token file is read or written.
+ */
+export function ensureConfig(
+  home: string,
+  env: NodeJS.ProcessEnv = process.env,
+  security: PrivatePaths = platform.security,
+): Config {
+  ensurePrivateLayout(home, security);
+  if (existsSync(configPath(home))) return hardenExistingConfig(home, security);
   const config: Config = {
     token: randomBytes(32).toString("base64url"),
     port: initialPort(env),
@@ -66,12 +92,11 @@ export function ensureConfig(
 }
 
 /**
- * Existing configs are tightened on every load. A protection failure throws, so
- * the bridge refuses to start with a weak config instead of reading the token.
+ * Pure read of an already hardened config. It never changes permissions, so the
+ * hook hot path cannot spawn an ACL command; startup callers harden first.
  */
-export function loadConfig(home: string, security: PrivatePaths = platform.security): Config {
+export function loadConfig(home: string): Config {
   const target = configPath(home);
-  security.protectFile(target);
   const parsed = JSON.parse(readFileSync(target, "utf8")) as Partial<Config>;
   if (typeof parsed.token !== "string" || parsed.token.length < 16) throw new Error("config.token missing or too short");
   const port = parsed.port ?? 7788;
@@ -88,34 +113,30 @@ export function loadConfig(home: string, security: PrivatePaths = platform.secur
 
 /**
  * Write the config atomically and fail closed. The token-bearing temp file is
- * protected and verified before it can replace the live config; after the
- * rename the final path is protected again. If the rename happened but its
- * protection cannot be confirmed, the config is removed rather than trusted.
+ * protected and verified before it can replace the live config, so the rename
+ * cannot install a weaker DACL. After the rename the final path is verified
+ * again; that verification is intentionally not destructive: once the rename
+ * happened the old token is gone, and deleting the file would turn a transient
+ * verification failure into token loss.
+ *
+ * Precondition: an existing home must already be protected by `ensureConfig` or
+ * `hardenConfig`. A home created here is protected before the temp file exists.
  */
 export function saveConfig(home: string, config: Config, security: PrivatePaths = platform.security): void {
-  mkdirSync(home, { recursive: true, mode: DIR_MODE });
+  if (mkdirSync(home, { recursive: true, mode: DIR_MODE })) security.protectHome(home);
   const target = configPath(home);
   const mode = existsSync(target) ? statSync(target).mode & 0o777 : FILE_MODE;
   const tmpPath = `${target}.tmp`;
-  let renamed = false;
   try {
     writeFileSync(tmpPath, JSON.stringify(config, null, 2) + "\n", { mode });
     security.protectFile(tmpPath);
     renameSync(tmpPath, target);
-    renamed = true;
     security.protectFile(target);
   } catch (error) {
     try {
       unlinkSync(tmpPath);
     } catch {
-      // The temp file may never have been created.
-    }
-    if (renamed) {
-      try {
-        unlinkSync(target);
-      } catch {
-        // The config may already be gone.
-      }
+      // The temp file may never have been created, or the rename already consumed it.
     }
     throw error;
   }

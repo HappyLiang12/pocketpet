@@ -1,9 +1,10 @@
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
-import { configPath, ensureConfig, loadConfig, saveConfig } from "../src/config.js";
+import { configPath, ensureConfig, hardenConfig, loadConfig, saveConfig } from "../src/config.js";
+import { platform } from "../src/platform/index.js";
 import type { PrivatePaths } from "../src/platform/types.js";
 
 type SecurityRecorder = PrivatePaths & { calls: string[] };
@@ -173,32 +174,86 @@ describe("config protection", () => {
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("removes the renamed config when post-rename verification fails", () => {
+  it("keeps a pre-existing config when post-rename verification fails", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const created = ensureConfig(home);
     const target = configPath(home);
+    // Temp-file protection passes; only the post-rename verification fails.
     const security = fakeSecurity({
       protectFile: (path) => {
         if (path === target) throw new Error("ACL verification failed");
       },
     });
 
-    expect(() => ensureConfig(home, process.env, security)).toThrow(/verification/);
-    expect(existsSync(target)).toBe(false);
+    expect(() => saveConfig(home, { ...created, activePet: "local:boba" }, security)).toThrow(/verification/);
+    // The token survives: a transient verification error must not destroy it.
+    expect(existsSync(target)).toBe(true);
+    expect(JSON.parse(readFileSync(target, "utf8")).token).toBe(created.token);
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
-  it("tightens an existing config on load and refuses one it cannot protect", () => {
+  it("never invokes platform protection on a pure load (hook read path)", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const created = ensureConfig(home);
+    const protectHome = vi.spyOn(platform.security, "protectHome");
+    const protectLogs = vi.spyOn(platform.security, "protectLogs");
+    const protectFile = vi.spyOn(platform.security, "protectFile");
+    try {
+      // runHook calls exactly this entry point on every hook event.
+      expect(loadConfig(home).token).toBe(created.token);
+      expect(protectHome).not.toHaveBeenCalled();
+      expect(protectLogs).not.toHaveBeenCalled();
+      expect(protectFile).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("hardenConfig protects home, logs and the config without changing the token", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const created = ensureConfig(home);
+    const recorder = fakeSecurity();
+
+    expect(hardenConfig(home, recorder).token).toBe(created.token);
+    expect(recorder.calls).toEqual([`home:${home}`, `logs:${home}`, `file:${configPath(home)}`]);
+  });
+
+  it("hardenConfig refuses an existing config it cannot protect", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const created = ensureConfig(home);
 
     const refusals = fakeSecurity({ protectFile: () => { throw new Error("ACL apply failed"); } });
-    expect(() => loadConfig(home, refusals)).toThrow(/ACL/);
+    expect(() => hardenConfig(home, refusals)).toThrow(/ACL/);
     // The original token file is untouched; no new token is generated.
     expect(loadConfig(home).token).toBe(created.token);
+  });
 
+  it("hardens an existing config at startup and preserves its token", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const created = ensureConfig(home);
     const recorder = fakeSecurity();
-    expect(loadConfig(home, recorder).token).toBe(created.token);
-    expect(recorder.calls).toEqual([`file:${configPath(home)}`]);
+
+    expect(ensureConfig(home, process.env, recorder).token).toBe(created.token);
+    expect(recorder.calls).toEqual([`home:${home}`, `logs:${home}`, `file:${configPath(home)}`]);
+  });
+
+  it("protects the home when saveConfig has to create it", () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    rmSync(home, { recursive: true, force: true });
+    const security = fakeSecurity();
+
+    saveConfig(home, {
+      token: "t".repeat(32),
+      port: 7788,
+      activePet: null,
+      sleepAfterMinutes: 10,
+      quietHours: null,
+      appearance: normalizeAppearance(DEFAULT_APPEARANCE),
+    }, security);
+
+    expect(security.calls[0]).toBe(`home:${home}`);
+    expect(security.calls).toContain(`file:${configPath(home)}.tmp`);
+    expect(existsSync(configPath(home))).toBe(true);
   });
 
   it("refuses to regenerate an existing config that cannot be protected", () => {
