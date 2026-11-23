@@ -30,10 +30,19 @@ const uid = process.getuid?.() ?? 0;
 const labelTarget = `gui/${uid}/${SERVICE_LABEL}`;
 
 let home = "";
+let plistDir = "";
 afterEach(() => {
   if (home) rmSync(home, { recursive: true, force: true });
+  if (plistDir) rmSync(plistDir, { recursive: true, force: true });
   home = "";
+  plistDir = "";
 });
+
+/** A plist outside the PocketPet data dir, matching where installService really writes. */
+function externalPlistPath(): string {
+  plistDir = mkdtempSync(join(tmpdir(), "pocketpet-plist-"));
+  return join(plistDir, `${SERVICE_LABEL}.plist`);
+}
 
 function setupConfig(overrides: Partial<ServiceConfig> = {}): ServiceConfig {
   home = mkdtempSync(join(tmpdir(), "pocketpet-service-"));
@@ -209,10 +218,14 @@ describe("serviceStatus", () => {
 });
 
 describe("darwinService", () => {
-  it("reports installed but stopped when the plist exists without a loaded job", async () => {
-    const cfg = setupConfig();
-    mkdirSync(dirname(cfg.plistPath as string), { recursive: true });
-    writeFileSync(cfg.plistPath as string, servicePlist(cfg));
+  it("reports installed but stopped when the plist exists outside the data home", async () => {
+    const plistPath = externalPlistPath();
+    const cfg = setupConfig({ plistPath });
+    expect(cfg.plistPath?.startsWith(cfg.home)).toBe(false);
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(plistPath, servicePlist(cfg));
+    // The data-home location is not where the LaunchAgent lives.
+    expect(existsSync(servicePath(cfg.home))).toBe(false);
     const { calls, runner } = fakeRunner([1]);
     await expect(createDarwinService(runner).status(cfg)).resolves.toEqual({ installed: true, running: false });
     expect(calls).toEqual([["print", labelTarget]]);

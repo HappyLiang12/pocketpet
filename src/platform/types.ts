@@ -11,6 +11,8 @@ export type ServiceConfig = {
 export type ServiceState = { installed: boolean; running: boolean };
 
 export type ServiceManager = {
+  /** User-facing service name for CLI messages. */
+  label: string;
   install(cfg: ServiceConfig): Promise<void>;
   uninstall(cfg: ServiceConfig): Promise<void>;
   status(cfg: ServiceConfig): Promise<ServiceState>;

@@ -134,11 +134,12 @@ export async function serviceStatus(cfg: ServiceConfig, runner: LaunchctlRunner 
 /** launchd adapter bound to one runner; tests inject a fake and production uses launchctl. */
 export function createDarwinService(runner: LaunchctlRunner = defaultRunner): ServiceManager {
   return {
+    label: SERVICE_LABEL,
     install: (cfg) => installService(cfg, runner),
     uninstall: (cfg) => uninstallService(cfg, runner),
     status: async (cfg) => {
       const running = await serviceStatus(cfg, runner);
-      return { installed: running || existsSync(servicePath(cfg.home)), running };
+      return { installed: running || existsSync(resolvePlistPath(cfg)), running };
     },
   };
 }

@@ -7,6 +7,7 @@ const FILE_MODE = 0o600;
 const UNSUPPORTED_SERVICE = "service is not supported on this platform";
 
 const unsupportedService: ServiceManager = {
+  label: "PocketPet bridge",
   install: async () => {
     throw new Error(UNSUPPORTED_SERVICE);
   },
