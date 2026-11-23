@@ -298,3 +298,46 @@ export function setupDeniedHtml(port: number, lang: Lang = "en"): string {
 </html>
 `;
 }
+
+/**
+ * Shown when an unauthenticated browser opens the cleaned root URL. The token
+ * is intentionally absent; explain how to pair this browser without leaking it.
+ */
+export function unauthorizedHtml(port: number, lang: Lang = "en"): string {
+  const copy = setupCopy[lang];
+  const setupUrl = `http://127.0.0.1:${port}/setup`;
+  return `<!doctype html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${copy.unauthorizedHtmlTitle}</title>
+<style>
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #f6f4ef;
+    color: #24211c;
+    font-family: ${fontStack(lang)};
+    line-height: 1.7;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 12px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .note { color: #6b655d; font-size: 0.92rem; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #171512; color: #f3efe7; }
+    .note { color: #b3aca2; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>${copy.unauthorizedHeading}</h1>
+  <p>${copy.unauthorizedBody}</p>
+  <p class="note">${copy.unauthorizedNote.replace("{setupUrl}", escapeHtml(setupUrl))}</p>
+</main>
+</body>
+</html>
+`;
+}

@@ -93,6 +93,12 @@ const enSetup = {
     "This setup page opens only on the computer running PocketPet. Open <code>{setupUrl}</code> on that computer (or run <code>pocketpet up</code>), then scan the QR code on the page with your phone camera.",
   deniedNote:
     "Scan once per phone; the same QR code can be reused until you change the token. Phones do not need <code>/setup</code>.",
+  unauthorizedHtmlTitle: "This browser is not paired",
+  unauthorizedHeading: "This browser is not paired",
+  unauthorizedBody:
+    "You opened the cleaned phone URL. PocketPet removes the pairing token from the phone address bar after the first request and keeps it in an HttpOnly cookie in that browser. A copied clean URL has no token, so another browser cannot authenticate with it.",
+  unauthorizedNote:
+    "On the computer running PocketPet, open <code>{setupUrl}</code>, then scan the QR code with the phone you want to pair, or copy one of the tokenized URLs from that page into this browser. The same QR code can be reused until you change the token. Do not share the cleaned URL.",
   hostThisComputer: "This computer",
   hostVersion: "Version",
   navPair: "Pair",
@@ -194,6 +200,12 @@ export const setupCopy = {
       "呢個配對頁只可以喺執行 PocketPet 嘅電腦本機開啟。請喺嗰部電腦開 <code>{setupUrl}</code>（或執行 <code>pocketpet up</code>），然後用手機相機掃描頁面上嘅 QR。",
     deniedNote:
       "每部手機各自掃一次；同一個 QR 可以重複使用，直到你更改 token。手機唔需要開 <code>/setup</code>。",
+    unauthorizedHtmlTitle: "此瀏覽器尚未配對",
+    unauthorizedHeading: "此瀏覽器尚未配對",
+    unauthorizedBody:
+      "你開啟的是清理後的手機網址。PocketPet 在第一次請求後會從手機地址欄移除配對 token，並把 token 存成該瀏覽器的 HttpOnly cookie；把清理後的網址複製到另一個瀏覽器不會帶同 token，因此無法通過驗證。",
+    unauthorizedNote:
+      "在執行 PocketPet 的電腦開啟 <code>{setupUrl}</code>，用手機掃描 QR，或把該頁的帶 token 網址複製到這個瀏覽器。同一個 QR 可重複使用，直到你更改 token。不要分享清理後的網址。",
     hostThisComputer: "此電腦",
     hostVersion: "版本",
     navPair: "配對",
@@ -269,6 +281,12 @@ export const setupCopy = {
     deniedBody:
       "这个配对页只能在运行 PocketPet 的电脑本机打开。请在那台电脑上打开 <code>{setupUrl}</code>（或执行 <code>pocketpet up</code>），然后用手机相机扫描页面上的二维码。",
     deniedNote: "每部手机各自扫描一次；同一个二维码可以重复使用，直到你更改 token。手机不需要打开 <code>/setup</code>。",
+    unauthorizedHtmlTitle: "此浏览器尚未配对",
+    unauthorizedHeading: "此浏览器尚未配对",
+    unauthorizedBody:
+      "你打开的是清理后的手机网址。PocketPet 在第一次请求后会从手机地址栏移除配对 token，并把 token 存成该浏览器的 HttpOnly cookie；把清理后的网址复制到另一个浏览器不会带上 token，因此无法通过验证。",
+    unauthorizedNote:
+      "在运行 PocketPet 的电脑上打开 <code>{setupUrl}</code>，用手机扫描二维码，或把该页的带 token 网址复制到这个浏览器。同一个二维码可以重复使用，直到你更改 token。不要分享清理后的网址。",
     hostThisComputer: "这台电脑",
     hostVersion: "版本",
     navPair: "配对",

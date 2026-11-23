@@ -55,7 +55,19 @@ async function setupJson(path: string, init: RequestInit = {}) {
 
 describe("bridge server", () => {
   it("rejects unauthenticated API calls", async () => {
-    expect((await fetch(`${base()}/api/state`)).status).toBe(401);
+    const res = await fetch(`${base()}/api/state`);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+  });
+
+  it("serves a helpful HTML page for an unauthenticated clean root URL", async () => {
+    const res = await fetch(`${base()}/`, { headers: { "accept-language": "zh-HK" } });
+    expect(res.status).toBe(401);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    const page = await res.text();
+    expect(page).toContain("尚未配對");
+    expect(page).toContain(`http://127.0.0.1:${bridge.port}/setup`);
+    expect(page).not.toContain(bridge.config.token);
   });
 
   it("serves the bootstrap page and sets a cookie", async () => {
