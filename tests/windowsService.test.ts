@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -306,13 +306,22 @@ type Recorder = {
   order: string[];
 };
 
-function fakeDeps(options: { elevatedStatus?: number; state?: string } = {}): Recorder {
+function fakeDeps(
+  options: {
+    elevatedStatus?: number;
+    state?: string;
+    runResult?: (command: string, args: string[]) => { status: number } | undefined;
+    onElevated?: () => void;
+  } = {},
+): Recorder {
   const scripts: string[] = [];
   const runs: Array<{ command: string; args: string[] }> = [];
   const order: string[] = [];
   const deps: WindowsDeps = {
     run: (command, args) => {
       runs.push({ command, args });
+      const override = options.runResult?.(command, args);
+      if (override) return { status: override.status, stdout: "", stderr: "" };
       const text = args.join(" ");
       if (text.includes("WindowsIdentity")) return { status: 0, stdout: `${SID}\r\n`, stderr: "" };
       if (text.includes("Get-ScheduledTask")) return { status: 0, stdout: options.state ?? "Running\r\n", stderr: "" };
@@ -320,6 +329,7 @@ function fakeDeps(options: { elevatedStatus?: number; state?: string } = {}): Re
     },
     elevated: async (script) => {
       scripts.push(script);
+      options.onElevated?.();
       return { status: options.elevatedStatus ?? 0, stdout: "", stderr: "" };
     },
     protectLogs: (home) => order.push(`logs:${home}`),
@@ -350,33 +360,82 @@ describe("Windows service transaction", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("protects logs, writes the launcher, then adds firewall rules, registers, and starts the task", async () => {
-    const { deps, scripts, order } = fakeDeps();
+  it("protects logs, stages a temp launcher, then ends, adds rules, registers, and starts the task", async () => {
+    const { deps, scripts, order, runs } = fakeDeps();
 
     await installWindowsService(cfg, deps);
 
-    expect(order).toEqual([`logs:${cfg.home}`, `file:${launcher}`]);
+    expect(order[0]).toBe(`logs:${cfg.home}`);
+    expect(order[1]).toMatch(/file:.*\.bridge-service\.ps1\..*\.tmp$/);
+    // The final launcher is only protected after it has been installed.
+    expect(order[2]).toBe(`file:${launcher}`);
     expect(existsSync(launcher)).toBe(true);
     const launcherBytes = readFileSync(launcher);
     expect([...launcherBytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
 
     expect(scripts).toHaveLength(1);
     const script = scripts[0]!;
+    const priorTaskCheck = script.indexOf("$hadTask = ");
+    const end = script.indexOf(`/End /TN 'PocketPet Bridge'`);
     const staleDeletes = script.indexOf("'delete' 'rule'");
     const firewallAdds = script.indexOf("'add' 'rule'");
     const create = script.indexOf(`/Create /TN 'PocketPet Bridge' /XML $xmlPath /F`);
-    const run = script.indexOf(`/Run /TN 'PocketPet Bridge'`);
-    expect(staleDeletes).toBeGreaterThanOrEqual(0);
+    expect(priorTaskCheck).toBeGreaterThanOrEqual(0);
+    expect(priorTaskCheck).toBeLessThan(script.indexOf("try {"));
+    expect(end).toBeGreaterThanOrEqual(0);
+    // An existing task is ended before /Create /F replaces it.
+    expect(end).toBeLessThan(staleDeletes);
     expect(staleDeletes).toBeLessThan(firewallAdds);
     expect(firewallAdds).toBeLessThan(create);
-    expect(create).toBeLessThan(run);
+    // The task is started only after the launcher is in place, never inside the
+    // elevation (where the previous launcher is still the one on disk).
+    expect(script.slice(script.indexOf("try {"), script.indexOf("} catch {"))).not.toContain("/Run");
     expect(script).toContain("$env:TEMP");
     expect(script).toContain("Remove-Item -LiteralPath $xmlPath");
     expect(script).toContain("throw 'firewall rule update failed'");
+    expect(script).toContain("throw 'task registration failed'");
     expect(script).toContain(`'name=${FIREWALL_TCP}'`);
     expect(script).toContain(`'name=${FIREWALL_MDNS}'`);
     expect(script).toContain(`'localport=${cfg.port}'`);
     expect(script).toContain(`'program=${cfg.nodePath}'`);
+
+    const start = runs[runs.length - 1]!;
+    expect(start.command).toBe("schtasks.exe");
+    expect(start.args).toEqual(["/Run", "/TN", TASK_NAME]);
+    expect(existsSync(launcher)).toBe(true);
+  });
+
+  it("keeps the previous launcher until the elevated install succeeds, then replaces it atomically", async () => {
+    mkdirSync(cfg.home, { recursive: true });
+    const previous = Buffer.from("old launcher\r\n", "utf8");
+    writeFileSync(launcher, previous);
+    let duringElevation: Buffer | null = null;
+    let tempsDuringElevation = 0;
+    const { deps } = fakeDeps({
+      onElevated: () => {
+        duringElevation = readFileSync(launcher);
+        tempsDuringElevation = readdirSync(cfg.home).filter((name) => name.endsWith(".tmp")).length;
+      },
+    });
+
+    await installWindowsService(cfg, deps);
+
+    expect(duringElevation).toEqual(previous);
+    expect(tempsDuringElevation, "the new launcher is staged at a temp path").toBe(1);
+    expect(readFileSync(launcher)).toEqual(windowsLauncherBytes(cfg));
+    expect(readdirSync(cfg.home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("preserves the previous launcher when a reinstall is cancelled at UAC", async () => {
+    mkdirSync(cfg.home, { recursive: true });
+    writeFileSync(launcher, "old launcher\r\n");
+    const { deps, scripts } = fakeDeps({ elevatedStatus: ELEVATION_CANCELLED });
+
+    await expect(installWindowsService(cfg, deps)).rejects.toMatchObject({ cancelled: true });
+
+    expect(scripts).toHaveLength(1);
+    expect(readFileSync(launcher, "utf8")).toBe("old launcher\r\n");
+    expect(readdirSync(cfg.home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("embeds task XML as UTF-16LE with a BOM and no token", async () => {
@@ -393,12 +452,13 @@ describe("Windows service transaction", () => {
     expect(script).not.toMatch(/token=|pairing|\?t=/i);
   });
 
-  it("rolls back firewall rules and the task inside the elevation before deleting the launcher", async () => {
+  it("rolls back firewall rules and the task on a fresh install failure and leaves no launcher", async () => {
     const { deps, scripts } = fakeDeps({ elevatedStatus: 1 });
 
     await expect(installWindowsService(cfg, deps)).rejects.toThrow(/elevated install failed \(exit 1\)/);
 
     expect(existsSync(launcher)).toBe(false);
+    expect(readdirSync(cfg.home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
     expect(scripts).toHaveLength(1);
     const script = scripts[0]!;
     const catchIndex = script.indexOf("} catch {");
@@ -412,6 +472,32 @@ describe("Windows service transaction", () => {
     expect(rollback).toContain(FIREWALL_TCP);
     expect(rollback).toContain(FIREWALL_MDNS);
     expect(rollback).toContain("/TN 'PocketPet Bridge' /F");
+  });
+
+  it("restores a previously installed task instead of deleting it when an upgrade fails", async () => {
+    const { deps, scripts } = fakeDeps({ elevatedStatus: 1 });
+
+    await expect(installWindowsService(cfg, deps)).rejects.toThrow(/elevated install failed/);
+
+    const script = scripts[0]!;
+    const catchIndex = script.indexOf("} catch {");
+    const rollback = script.slice(catchIndex);
+    expect(rollback).toContain("if ($hadTask)");
+    // A prior install is restarted; only a fresh install is cleaned up.
+    expect(rollback.indexOf("if ($hadTask)")).toBeLessThan(rollback.indexOf("'delete' 'rule'"));
+    expect(rollback).toMatch(/\} catch \{ if \(\$hadTask\) \{ .*\/Run .*\} else \{/);
+  });
+
+  it("reports a failed task start instead of claiming the service is running", async () => {
+    const { deps } = fakeDeps({
+      runResult: (command, args) => (command === "schtasks.exe" && args.includes("/Run") ? { status: 1 } : undefined),
+    });
+
+    await expect(installWindowsService(cfg, deps)).rejects.toThrow(/could not be started/i);
+
+    // The task and launcher are installed; only the start failed.
+    expect(existsSync(launcher)).toBe(true);
+    expect(readdirSync(cfg.home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("surfaces UAC cancellation distinctly and leaves no launcher", async () => {
@@ -477,7 +563,7 @@ describe("Windows service uninstall", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("ends and deletes the task before removing both firewall rules in one elevation", async () => {
+  it("ends and deletes the task, verifies it is gone, then removes both firewall rules in one elevation", async () => {
     writeFileSync(launcher, windowsLauncherBytes(cfg));
     const { deps, scripts } = fakeDeps();
     const service = createWindowsService(deps);
@@ -488,13 +574,28 @@ describe("Windows service uninstall", () => {
     const script = scripts[0]!;
     const end = script.indexOf("/End");
     const taskRemoval = script.indexOf("/Delete");
+    const verify = script.indexOf("/Query");
     const ruleRemoval = script.indexOf("'delete' 'rule'");
     expect(end).toBeGreaterThanOrEqual(0);
     expect(end).toBeLessThan(taskRemoval);
-    expect(taskRemoval).toBeLessThan(ruleRemoval);
+    // A failed delete must exit nonzero instead of reporting success.
+    expect(taskRemoval).toBeLessThan(verify);
+    expect(verify).toBeLessThan(ruleRemoval);
+    expect(script).toContain("if ($LASTEXITCODE -eq 0) { throw 'task deletion failed' }");
+    // Rule deletion stays idempotent: a missing rule must not fail the uninstall.
+    expect(script.trimEnd().endsWith("exit 0")).toBe(true);
     expect(script).toContain(FIREWALL_TCP);
     expect(script).toContain(FIREWALL_MDNS);
     expect(existsSync(launcher)).toBe(false);
+  });
+
+  it("propagates a failed elevated uninstall and keeps the launcher", async () => {
+    writeFileSync(launcher, windowsLauncherBytes(cfg));
+    const { deps } = fakeDeps({ elevatedStatus: 1 });
+    const service = createWindowsService(deps);
+
+    await expect(service.uninstall(cfg)).rejects.toThrow(/elevated uninstall failed \(exit 1\)/);
+    expect(existsSync(launcher)).toBe(true);
   });
 
   it("keeps the launcher when UAC is canceled and reports the cancellation", async () => {
@@ -575,6 +676,9 @@ describe("Windows elevation runner", () => {
     expect(wrapper).toContain(`exit ${ELEVATION_CANCELLED}`);
     // UAC cancellation surfaces as Win32Exception 1223 or HResult 0x800704C7.
     expect(wrapper).toContain("-2147023673");
+    // The elevated child is hidden and a null ExitCode is never treated as success.
+    expect(wrapper).toContain("-WindowStyle Hidden");
+    expect(wrapper).toContain("$null -eq $p.ExitCode");
   });
 
   it("fails closed when the encoded command exceeds the Windows command line limit", async () => {

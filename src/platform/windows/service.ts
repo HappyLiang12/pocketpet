@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CommandResult, CommandRunner, ServiceConfig, ServiceManager } from "../types.js";
 import {
@@ -72,9 +72,16 @@ const netsh = (args: string[]): string => `& netsh.exe ${args.map(psQuote).join(
 const removeRules = (): string[] => [FIREWALL_TCP, FIREWALL_MDNS].map((name) => netsh(firewallRemoveArgs(name)));
 
 /**
- * Token-free elevated install spec: firewall rules, task XML, registration,
- * start. The XML travels as base64 inside the encoded command; it is written
- * to `$env:TEMP` only for `schtasks /XML` and removed before the script ends.
+ * Token-free elevated install spec: firewall rules, task XML, registration.
+ * The XML travels as base64 inside the encoded command; it is written to
+ * `$env:TEMP` only for `schtasks /XML` and removed before the script ends.
+ *
+ * The launcher is not installed by this script: the caller replaces it only
+ * after this elevation succeeds, so a cancelled prompt or a failed install
+ * keeps the previous launcher and task. A previous task is ended before
+ * `/Create /F` replaces it, and a failed upgrade restarts that previous task
+ * instead of deleting it. The new task is started by the caller after the
+ * launcher is in place.
  */
 export function windowsInstallScript(cfg: ServiceConfig, sid: string): string {
   const xml64 = windowsTaskXmlBytes(windowsTaskXml(cfg, sid)).toString("base64");
@@ -92,24 +99,40 @@ export function windowsInstallScript(cfg: ServiceConfig, sid: string): string {
     "$ErrorActionPreference = 'Stop';",
     "$xmlPath = Join-Path $env:TEMP ('pocketpet-task-' + [guid]::NewGuid().ToString('N') + '.xml');",
     `[IO.File]::WriteAllBytes($xmlPath, [Convert]::FromBase64String(${psQuote(xml64)}));`,
+    // Remember whether a previous install exists so a failed upgrade can be
+    // restored rather than destroying it.
+    `& schtasks.exe /Query /TN ${psQuote(TASK_NAME)} *> $null; $hadTask = ($LASTEXITCODE -eq 0);`,
     "try {",
+    // Stop the previous bridge before /Create /F swaps the task definition.
+    `& schtasks.exe /End /TN ${psQuote(TASK_NAME)} 2>$null;`,
     ...ruleSteps,
     `& schtasks.exe /Create /TN ${psQuote(TASK_NAME)} /XML $xmlPath /F;`,
     "if ($LASTEXITCODE -ne 0) { throw 'task registration failed' }",
     "Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue;",
-    `& schtasks.exe /Run /TN ${psQuote(TASK_NAME)};`,
-    "if ($LASTEXITCODE -ne 0) { throw 'task start failed' }",
-    `} catch { ${cleanup} Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue; throw }`,
+    "} catch {",
+    // A failed upgrade restores the previous task (its launcher is untouched);
+    // a failed fresh install removes the rules and the task it just created.
+    `if ($hadTask) { & schtasks.exe /Run /TN ${psQuote(TASK_NAME)} 2>$null; } else { ${cleanup} }`,
+    "Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue; throw }",
   ].join(" ");
 }
 
-/** One elevation: end and delete the task, then remove both firewall rules. */
+/**
+ * One elevation: end and delete the task, verify it is gone, then remove both
+ * firewall rules. A task that survives the delete makes the script exit
+ * nonzero so the caller never reports a failed uninstall as removed.
+ */
 export function windowsUninstallScript(): string {
   return [
     "$ErrorActionPreference = 'Stop';",
     `& schtasks.exe /End /TN ${psQuote(TASK_NAME)} 2>$null;`,
     `& schtasks.exe /Delete /TN ${psQuote(TASK_NAME)} /F 2>$null;`,
+    // A missing task is fine for idempotency; one that still exists is a failure.
+    `& schtasks.exe /Query /TN ${psQuote(TASK_NAME)} *> $null;`,
+    "if ($LASTEXITCODE -eq 0) { throw 'task deletion failed' }",
+    // Rule deletion stays best effort: netsh fails when no rule matches.
     ...removeRules(),
+    "exit 0",
   ].join(" ");
 }
 
@@ -128,6 +151,15 @@ function launcherPath(cfg: ServiceConfig): string {
   return join(cfg.home, LAUNCHER_FILE);
 }
 
+/**
+ * Staging path for the new launcher. It lives in the same directory as the
+ * final launcher so the post-success rename is atomic on one volume, and it is
+ * never the path the task XML points at.
+ */
+function stagedLauncherPath(cfg: ServiceConfig): string {
+  return join(cfg.home, `.${LAUNCHER_FILE}.${process.pid}.tmp`);
+}
+
 function assertElevated(result: CommandResult, action: "install" | "uninstall"): void {
   if (result.status === ELEVATION_CANCELLED) {
     throw new WindowsServiceError(`${action} was cancelled at the elevation prompt`, {
@@ -141,10 +173,13 @@ function assertElevated(result: CommandResult, action: "install" | "uninstall"):
 }
 
 /**
- * Install transaction: validate, protect logs, write the launcher, then run one
- * elevated helper that adds firewall rules, registers the task, and starts it.
- * The PowerShell `catch` rolls back rules/task inside the same elevation; the
- * un-elevated catch removes only the launcher.
+ * Install transaction: validate, protect logs, stage the launcher, then run one
+ * elevated helper that ends any previous task, adds firewall rules, and
+ * registers the task. The previous launcher stays on disk until that elevation
+ * succeeds; only then is the staged launcher renamed over it and the new task
+ * started. Cancel or failure removes the staged copy and leaves the previous
+ * install intact. Complete firewall/task rollback for a failed upgrade after
+ * the elevation has changed state remains a real-Windows gate (Task 8/10).
  */
 export async function installWindowsService(cfg: ServiceConfig, deps: WindowsDeps): Promise<void> {
   assertCompiledCli(cfg);
@@ -153,15 +188,29 @@ export async function installWindowsService(cfg: ServiceConfig, deps: WindowsDep
   deps.protectLogs(cfg.home);
 
   const launcher = launcherPath(cfg);
+  const staged = stagedLauncherPath(cfg);
   try {
-    writeFileSync(launcher, windowsLauncherBytes(cfg), { mode: 0o600 });
-    deps.protectFile(launcher);
+    writeFileSync(staged, windowsLauncherBytes(cfg), { mode: 0o600 });
+    deps.protectFile(staged);
     const sid = currentUserSid(deps.run);
     const result = await deps.elevated(windowsInstallScript(cfg, sid));
     assertElevated(result, "install");
+    // Atomic replace: the prior launcher survives every cancel/failure above.
+    renameSync(staged, launcher);
+    deps.protectFile(launcher);
   } catch (error) {
-    rmSync(launcher, { force: true });
+    // Remove only the staged copy so a cancelled reinstall keeps the previous launcher.
+    rmSync(staged, { force: true });
     throw error;
+  }
+  // The task is started only after its launcher exists; a start failure is
+  // reported instead of claiming the service is running.
+  const started = deps.run("schtasks.exe", ["/Run", "/TN", TASK_NAME]);
+  if (started.status !== 0) {
+    throw new WindowsServiceError(
+      "the bridge task was installed but could not be started; start it from Task Scheduler or run `pocketpet service install` again",
+      { exitCode: started.status },
+    );
   }
 }
 
@@ -196,7 +245,9 @@ export function elevatedWrapperScript(script: string): string {
   return [
     "$ErrorActionPreference = 'Stop';",
     "try {",
-    `$p = Start-Process -FilePath '${POWERSHELL}' -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${encoded}' -Verb RunAs -Wait -PassThru;`,
+    `$p = Start-Process -FilePath '${POWERSHELL}' -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${encoded}' -Verb RunAs -Wait -PassThru;`,
+    // A null Process/ExitCode must never read as success.
+    "if ($null -eq $p -or $null -eq $p.ExitCode) { exit 1 };",
     "exit $p.ExitCode;",
     "} catch {",
     "$native = 0;",

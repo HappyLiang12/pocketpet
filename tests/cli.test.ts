@@ -377,6 +377,9 @@ describe("Windows service CLI fallback", () => {
     expect(waitForInterrupt).toHaveBeenCalledTimes(1);
     expect(output).toContain("Could not install the bridge service.");
     expect(output).toContain("Continuing in the foreground; run `pocketpet service install` from an elevated shell later.");
+    // The exact, token-free elevated command is printed, not just a hint.
+    expect(output).toContain(`& '${process.execPath}'`);
+    expect(output).toContain("service install");
     expect(output).toContain("Starting the bridge in the foreground.");
     expect(output).not.toContain("Bridge service is running");
   });
@@ -420,6 +423,42 @@ describe("Windows service CLI fallback", () => {
     expect(output).toContain("Could not install the bridge service (PocketPet Bridge).");
     expect(output).toContain("The elevation prompt was canceled.");
     expect(output).not.toContain(config.token);
+  });
+
+  it("prints the exact elevated install command when a Windows install fails", async () => {
+    const config = ensureConfig(home);
+    const platform = fakePlatform({
+      install: vi.fn(async () => {
+        throw new Error("elevated install failed (exit 1)");
+      }),
+    });
+
+    const { result, output } = await capture(() => runService("install", { platform, platformName: "win32" }));
+
+    expect(result).toBe(1);
+    expect(platform.service.install).toHaveBeenCalledTimes(1);
+    expect(output).toContain("Could not install the bridge service (PocketPet Bridge).");
+    // Windows advice names the elevation, not an npm build.
+    expect(output).toContain("elevated PowerShell");
+    expect(output).toContain(`& '${process.execPath}'`);
+    expect(output).toContain("service install");
+    expect(output).not.toContain("npm run build");
+    expect(output).not.toContain(config.token);
+  });
+
+  it("keeps the platform-appropriate build advice off Windows", async () => {
+    ensureConfig(home);
+    const platform = fakePlatform({
+      install: vi.fn(async () => {
+        throw new Error("launchctl bootstrap failed");
+      }),
+    });
+
+    const { result, output } = await capture(() => runService("install", { platform, platformName: "darwin" }));
+
+    expect(result).toBe(1);
+    expect(output).toContain("Build the CLI with `npm run build`");
+    expect(output).not.toContain("elevated PowerShell");
   });
 
   it("uses the platform service label for status messages", async () => {
