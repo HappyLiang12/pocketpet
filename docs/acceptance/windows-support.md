@@ -39,7 +39,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows-acceptan
 - Pass `-HomePath` when `POCKETPET_HOME` is not set in this shell or the home is not `%USERPROFILE%\.pocketpet`.
 - The output is one JSON object with `PASS`, `FAIL`, and `NOT RUN` gates plus `host`, `node`, `config`, `service`, `firewall`, `bridge`, and `mdns` evidence. The process exits 1 when any gate is `FAIL` and 0 otherwise; `NOT RUN` alone still exits 0, so expect exit 1 before the service is installed.
 - The probe reads only path existence, ACL state (`icacls` entries and the inheritance flag), the scheduled task state, firewall rule properties, the token-free loopback `/health` response, and a multicast DNS A answer. It never reads config content and never prints the token. `Get-ScheduledTask` State is the same signal as `service status`; `Get-ScheduledTaskInfo` last result/run time is read for diagnostics and probe evidence only.
-- The probe's `.local` gate runs on the bridge host itself, so same-host multicast filtering can produce a false FAIL. A system-resolver answer is indicative only; the phone-side gate below is authoritative.
+- The probe's `.local` gate only reports `PASS` when `/health` advertises a non-null `localHostname` and a direct multicast A query answers. A system-resolver answer alone is `NOT RUN`/indicative, because it can be another host or a stale cache; the phone-side gate below is authoritative. With `localHostname: null` the gate is `NOT RUN` regardless of any resolver answer.
 
 Paste the JSON (with the built-in redaction) into the evidence block for each related gate.
 
@@ -129,7 +129,7 @@ Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity chec
 **PASS criteria**
 
 - Both phones load the page and connect; the URL host is the `.local` name, not an IP.
-- The probe reports `PASS` for `mdns .local` (direct multicast answer preferred).
+- The probe reports `PASS` for `mdns .local` only when `/health` advertises a non-null `localHostname` and a direct multicast A query answers; a system-resolver-only answer is `NOT RUN`, not a pass. A same-host multicast filter can produce a false `FAIL`, so the phone-side result is authoritative.
 - `pocketpet doctor` shows `PASS mdns: advertising <name>.local` while the service bridge runs.
 - A hostname collision or blocked multicast is recorded as a FAIL with the IP/USB fallback used, not silently excused.
 

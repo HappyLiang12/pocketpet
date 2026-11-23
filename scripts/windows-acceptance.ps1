@@ -50,7 +50,8 @@ $ErrorActionPreference = 'Continue'
 # profile path and account name, but never print config content or the token.
 # ---------------------------------------------------------------------------
 $script:Redactions = @()
-if ($env:USERPROFILE) { $script:Redactions += @{ Value = $env:USERPROFILE; Label = '%USERPROFILE%' } }
+$script:ProfilePlaceholder = '__POCKETPET_PROFILE_PATH__'
+if ($env:USERPROFILE) { $script:Redactions += @{ Value = $env:USERPROFILE; Label = $script:ProfilePlaceholder } }
 if ($env:USERNAME) { $script:Redactions += @{ Value = $env:USERNAME; Label = '<user>' } }
 
 function Hide-Text {
@@ -60,7 +61,9 @@ function Hide-Text {
   foreach ($item in $script:Redactions) {
     $result = $result -replace [regex]::Escape($item.Value), $item.Label
   }
-  return $result
+  # Replace the profile path before the account name so the final placeholder
+  # does not get rewritten to %<user>PROFILE%.
+  return $result.Replace($script:ProfilePlaceholder, '%USERPROFILE%')
 }
 
 function New-Gate {
@@ -603,37 +606,50 @@ $mdnsDetail = 'no hostname is available; pass -Hostname'
 if ($mdnsTarget) {
   $direct = $null
   $directError = ''
+  $systemAnswers = @()
   try {
     $direct = @(Resolve-MdnsDirect -Name $mdnsTarget -TimeoutMs 2500)
   } catch {
     $directError = $_.Exception.Message
   }
+  if (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue) {
+    try {
+      $systemAnswers = @(Resolve-DnsName -Name $mdnsTarget -Type A -QuickTimeout -ErrorAction Stop |
+        Where-Object { $_.IPAddress } | ForEach-Object { [string]$_.IPAddress })
+    } catch { }
+  }
 
   if ($null -ne $direct -and $direct.Count -gt 0) {
-    $mdnsGate = 'PASS'
-    $mdnsDetail = "multicast A query answered $mdnsTarget"
     $mdnsInfo.method = 'direct multicast query'
     $mdnsInfo.addresses = @($direct)
-  } else {
-    $systemAnswers = @()
-    if (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue) {
-      try {
-        $systemAnswers = @(Resolve-DnsName -Name $mdnsTarget -Type A -QuickTimeout -ErrorAction Stop |
-          Where-Object { $_.IPAddress } | ForEach-Object { [string]$_.IPAddress })
-      } catch { }
-    }
+  } elseif ($systemAnswers.Count -gt 0) {
+    $mdnsInfo.method = 'system resolver (indicative)'
+    $mdnsInfo.addresses = @($systemAnswers)
+  }
+
+  if (-not $liveHostname) {
+    # A resolver answer from another host or a stale cache is not this bridge.
+    $mdnsGate = 'NOT RUN'
+    $mdnsDetail = 'bridge advertised no .local name (health localHostname is null); service/firewall are not running'
     if ($systemAnswers.Count -gt 0) {
-      $mdnsGate = 'PASS'
-      $mdnsDetail = "system resolver answered $mdnsTarget; verify from the phone (authoritative gate)"
-      $mdnsInfo.method = 'system resolver (indicative)'
-      $mdnsInfo.addresses = @($systemAnswers)
-    } elseif ($null -eq $direct) {
-      $mdnsGate = 'NOT RUN'
-      $mdnsDetail = "mDNS query could not run: $(Hide-Text $directError)"
-    } else {
-      $mdnsGate = 'FAIL'
-      $mdnsDetail = "no A answer for $mdnsTarget within 2.5s; check Private network, firewall rules, multicast, and IP/USB fallback (same-host probes can be filtered; verify from the phone)"
+      $mdnsDetail += "; system resolver answered, but that answer is not attributed to this bridge"
+    } elseif ($null -ne $direct -and $direct.Count -gt 0) {
+      $mdnsDetail += '; multicast answered, but that answer is not attributed to this bridge'
     }
+  } elseif ($null -ne $direct -and $direct.Count -gt 0) {
+    $mdnsGate = 'PASS'
+    $mdnsDetail = "multicast A query answered $mdnsTarget; bridge advertised $liveHostname"
+  } elseif ($systemAnswers.Count -gt 0) {
+    # The bridge advertises, but only the system resolver answered. The phone
+    # gate is authoritative; do not count this as a .local PASS.
+    $mdnsGate = 'NOT RUN'
+    $mdnsDetail = "system resolver answered $mdnsTarget; no direct multicast answer, so verify from the phone (authoritative gate)"
+  } elseif ($null -eq $direct) {
+    $mdnsGate = 'NOT RUN'
+    $mdnsDetail = "mDNS query could not run: $(Hide-Text $directError)"
+  } else {
+    $mdnsGate = 'FAIL'
+    $mdnsDetail = "bridge advertised $liveHostname but no A answer for $mdnsTarget within 2.5s; check Private network, firewall rules, multicast, and IP/USB fallback (same-host probes can be filtered; verify from the phone)"
   }
 }
 $gates.Add((New-Gate 'mdns .local' $mdnsGate $mdnsDetail))
