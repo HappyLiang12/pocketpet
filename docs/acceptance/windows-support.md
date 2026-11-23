@@ -288,13 +288,20 @@ Record exact counts and the run URL in the sign-off block when executed. The las
 - This row records observed behavior only. It never changes the official support matrix.
 - Any failure is documented as compatibility-only residual risk. Promoting Windows 10 requires a new approved spec and acceptance record.
 
-**Result:** NOT RUN
+**Result:** NOT RUN (partial compatibility evidence below; not a gate PASS)
 
 **Evidence:**
 
-```text
-(paste probe JSON, command log, and an explicit "compatibility-only, not supported" note)
-```
+Observed on the available Windows 10 desktop at commit `8de5513` on 2026-11-24. This is compatibility-only evidence and does not promote Windows 10 or any official gate.
+
+- Environment: Windows 10 Enterprise 22H2, 10.0.19045, x64; Windows PowerShell 5.1.19041.6456; Node v24.14.1; account non-admin (`Elevated=False`); network profile `UberFi_5G` = Public. The real `%USERPROFILE%\.pocketpet` was absent before and after; the test used a temporary home.
+- Bridge: a fresh temporary home was started twice with `node dist/cli.js up --no-hooks --no-service --no-open`. Both runs stayed alive and answered `/health` 200 with `localHostname: null`; no `SeSecurityPrivilege`/`could not protect` error. This is the repeated-start path that failed before the ACL idempotence fix.
+- ACL: home `(OI)(CI)(F)`, config `(F)`, and logs `(OI)(CI)(F)` each showed one non-inherited ACE for `HAPPY\<user>`; no `.tmp` files remained. Probe `config ACL` = PASS.
+- Probe summary: `PASS 3 / FAIL 2 / NOT RUN 2`.
+  - PASS: `node` (v24.14.1, minimum v20.6.0), `config ACL`, `loopback health` (200 without a token).
+  - FAIL: `scheduled task` and `firewall`; neither was installed because the account is non-admin and the service/UAC gate was not run.
+  - NOT RUN: `host` (Windows 10 is compatibility-only) and `mdns .local` (`localHostname` was null; the system-resolver answer `happy.local` was explicitly not attributed to the bridge).
+- Not run: service install/uninstall, Task Scheduler logon, UAC, Private-profile firewall rules, phone IP/`.local` reachability, Qoder real-app hook, official Windows 11 x64 gate, and the Windows CI matrix. The non-admin account and Public network remain explicit blockers.
 
 ### 12. Linux and Windows on ARM
 
