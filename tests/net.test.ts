@@ -80,6 +80,37 @@ describe("rankLanAddresses", () => {
     expect(ranked.map((item) => item.rank)).toEqual([0, 1, 2]);
   });
 
+  it("orders macOS en adapters by numeric index before address", () => {
+    const ranked = rankLanAddresses(
+      {
+        en6: [addr("192.168.1.3")],
+        en0: [addr("192.168.1.9")],
+      },
+      "darwin",
+    );
+    expect(ranked.map((item) => item.interfaceName)).toEqual(["en0", "en6"]);
+    expect(ranked.map((item) => item.rank)).toEqual([0, 0]);
+  });
+
+  it("applies virtual adapter demotion only on Windows", () => {
+    const ranked = rankLanAddresses(
+      {
+        utun3: [addr("100.64.0.2")],
+        "vEthernet (VPN)": [addr("10.0.0.2")],
+        tailscale0: [addr("100.64.0.3")],
+        en0: [addr("192.168.1.5")],
+      },
+      "darwin",
+    );
+    expect(ranked.map((item) => item.interfaceName)).toEqual([
+      "en0",
+      "vEthernet (VPN)",
+      "tailscale0",
+      "utun3",
+    ]);
+    expect(ranked.map((item) => item.rank)).toEqual([0, 1, 1, 2]);
+  });
+
   it("treats Wi-Fi and Ethernet as primary on Windows but not en*", () => {
     const ranked = rankLanAddresses(
       {
