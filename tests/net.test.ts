@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NetworkInterfaceInfo } from "node:os";
 import { rankLanAddresses, urlsForPort } from "../src/net.js";
 
@@ -121,6 +121,25 @@ describe("rankLanAddresses", () => {
     );
     expect(ranked.map((item) => item.interfaceName)).toEqual(["Wi-Fi", "en0"]);
     expect(ranked.map((item) => item.rank)).toEqual([0, 1]);
+  });
+
+  it("demotes utun on win32 so a macOS-shaped fixture keeps the physical adapter first", () => {
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    try {
+      const ifaces = {
+        en0: [addr("192.168.1.5")],
+        utun3: [addr("100.64.0.2")],
+        "Wi-Fi": [addr("192.168.1.2")],
+        "Ethernet 2": [addr("192.168.1.3")],
+      };
+      const ranked = rankLanAddresses(ifaces);
+      expect(ranked.map((item) => item.interfaceName)).toEqual(["Wi-Fi", "Ethernet 2", "en0", "utun3"]);
+      expect(ranked.map((item) => item.rank)).toEqual([0, 0, 1, 2]);
+      expect(ranked[0]).toEqual({ address: "192.168.1.2", interfaceName: "Wi-Fi", rank: 0 });
+      expect(urlsForPort(7788, "tok", ifaces)[0]).toBe("http://192.168.1.2:7788/?token=tok");
+    } finally {
+      platform.mockRestore();
+    }
   });
 
   it("deduplicates an address shared by a virtual and a physical adapter, keeping the better rank", () => {
