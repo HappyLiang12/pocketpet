@@ -9,6 +9,8 @@ export { advertisedAddresses, startMdns } from "./mdns.js";
 export type { MdnsAnswer, MdnsPacket, MdnsQuery, MdnsTransport } from "./mdns.js";
 export { currentUserSid, windowsSecurity, WindowsSecurityError } from "./security.js";
 export type { WindowsSecurityOperation } from "./security.js";
+export { windowsHookCommand } from "./hooks.js";
+export type { WindowsHookAgent } from "./hooks.js";
 export { createWindowsService, installWindowsService, uninstallWindowsService, windowsService } from "./service.js";
 export type { WindowsDeps } from "./service.js";
 

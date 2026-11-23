@@ -233,7 +233,13 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
       }
       if (path === "/health") {
         if (!isLoopback(req.socket.remoteAddress)) return text(res, 403, "loopback only");
-        return json(res, 200, { ok: true, sessions: aggregator.snapshot(null, { sleepAfterMinutes: 0, quietHours: null }).sessions.length });
+        // Loopback-only, token-free: service-mode `up` reads the live gated name
+        // here because only this process owns the mDNS responder.
+        return json(res, 200, {
+          ok: true,
+          sessions: aggregator.snapshot(null, { sleepAfterMinutes: 0, quietHours: null }).sessions.length,
+          localHostname: advertised ? hostAdapter.localHostname() : null,
+        });
       }
       if (req.method === "GET" && path === "/setup") {
         const lang = pickLanguage(req.headers["accept-language"], url.searchParams.get("lang"));

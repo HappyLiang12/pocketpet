@@ -1,8 +1,28 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { windowsHookCommand } from "../platform/windows/hooks.js";
 
 export const CLAUDE_HOOK_EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Notification", "SubagentStop", "Stop", "SessionEnd"] as const;
 export const HOOK_COMMAND = "pocketpet hook claude";
+
+/** Quoted absolute form written on Windows: `"<node>" "<cli.js>" hook claude`. */
+const WINDOWS_COMMAND = /^"[^"]+" "[^"]+" hook claude$/;
+
+/**
+ * Claude hook command for the current host. macOS/Linux keep the existing
+ * linked command; Windows uses the quoted absolute node + compiled CLI form
+ * because an agent GUI may not inherit the shell PATH. A TypeScript entry
+ * point keeps the linked-command fallback.
+ */
+export function claudeHookCommand(cliPath: string, nodePath: string, platformName: NodeJS.Platform = process.platform): string {
+  if (platformName !== "win32" || !cliPath.endsWith(".js")) return HOOK_COMMAND;
+  return windowsHookCommand(nodePath, cliPath, "claude");
+}
+
+/** True when a settings entry is PocketPet's Claude hook on any supported platform. */
+export function isClaudeHookCommand(command: unknown): command is string {
+  return typeof command === "string" && (command === HOOK_COMMAND || WINDOWS_COMMAND.test(command));
+}
 
 type Hook = { type?: string; command?: string };
 type Entry = { hooks?: unknown };

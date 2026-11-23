@@ -56,23 +56,21 @@ describe("installQoderHooks", () => {
     dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const file = join(dir, ".qoder", "settings.json");
     expect(installQoderHooks(file, command).added).toEqual([...QODER_HOOK_EVENTS]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
-  it("preserves an existing settings file mode", () => {
-    if (process.platform !== "win32") {
-      dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
-      const file = join(dir, "settings.json");
-      writeFileSync(file, JSON.stringify({ enabledPlugins: {} }));
-      chmodSync(file, 0o640);
-      expect(installQoderHooks(file, command).added).toEqual([...QODER_HOOK_EVENTS]);
-      expect(statSync(file).mode & 0o777).toBe(0o640);
-      expect(existsSync(`${file}.tmp`)).toBe(false);
-    }
+  it.skipIf(process.platform === "win32")("preserves an existing settings file mode", () => {
+    dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    const file = join(dir, "settings.json");
+    writeFileSync(file, JSON.stringify({ enabledPlugins: {} }));
+    chmodSync(file, 0o640);
+    expect(installQoderHooks(file, command).added).toEqual([...QODER_HOOK_EVENTS]);
+    expect(statSync(file).mode & 0o777).toBe(0o640);
+    expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
-  it("writes through a symlinked settings path without replacing the link", () => {
+  it.skipIf(process.platform === "win32")("writes through a symlinked settings path without replacing the link", () => {
     dir = mkdtempSync(join(tmpdir(), "pocketpet-"));
     const real = join(dir, "real-settings.json");
     const link = join(dir, "settings.json");
