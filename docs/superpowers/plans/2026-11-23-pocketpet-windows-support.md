@@ -24,6 +24,20 @@
 
 ---
 
+## Implementation deviations and final behavior
+
+**Read this before copying any snippet below.** Tasks 1-8 were implemented and reviewed after this plan was written. Several step snippets are the original design and are superseded by the shipped code, the tests, and the approved spec:
+
+- **Launcher:** the generated launcher is `<home>\bridge-service.ps1`, written as UTF-8 with a BOM. The Task Scheduler action is `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "<home>\bridge-service.ps1"`. There is no `bridge-service.cmd`, no `cmd.exe` action, and no `/d /s /c`; the `.cmd` form corrupts Unicode paths and `%` sequences through the OEM code page.
+- **Task XML bytes:** `windowsTaskXmlBytes()` writes UTF-16LE with a BOM (`FF FE`) before `schtasks /Create /XML`. A BOM-less UTF-16 file is rejected or mis-read; the JS string returned by `windowsTaskXml()` is not itself the registered file.
+- **Service status:** the primary, locale-independent source is `Get-ScheduledTask -TaskName "PocketPet Bridge"` piped to `Select-Object -ExpandProperty State`, plus `Get-ScheduledTaskInfo` for the last result. English `schtasks /Query` parsing (`serviceStatusFromQuery`) is fallback only, because `schtasks` labels are localized.
+- **ACL:** the generated script builds `$sidObj = New-Object System.Security.Principal.SecurityIdentifier($sid)` and passes `$sidObj` to `FileSystemAccessRule`. Passing the SID string directly would be treated as an `NTAccount` name and fail to translate. The script also verifies one protected allow FullControl ACE for that SID.
+- **Install transaction:** validate the compiled CLI, Node path, port, and SID; protect logs; write and protect a staged launcher; run one elevated helper that ends any previous task, deletes stale rules, adds the current Private-profile rules, and registers the task with `/Create /XML /F`; only after elevation succeeds rename the staged launcher over the old one, protect it, and start the task. A canceled or failed elevation keeps the previous launcher and task, and a failed upgrade restores the previous task.
+- **Hooks:** the Windows hook command is the absolute, double-quoted `"<node>" "<cli>" hook claude|qoder`, and stale bare entries are upgraded. The Qoder real-app gate remains `NOT RUN`.
+- **Docs and evidence:** `README.md`, `README.zh-Hans.md`, `SECURITY.md`, `docs/acceptance/windows-support.md`, and `scripts/windows-acceptance.ps1` describe the final behavior. The acceptance record starts every manual gate as `NOT RUN`.
+
+---
+
 ## File Map
 
 | Path | Responsibility |
@@ -237,6 +251,8 @@ Run: `npx vitest run tests/windowsSecurity.test.ts`
 Expected: FAIL because the module does not exist.
 
 - [ ] **Step 3: Implement SID lookup and DACL replacement**
+
+> **Superseded snippet:** the `FileSystemAccessRule($sid, ...)` call below passes a SID string, which PowerShell treats as an `NTAccount` name. Final code creates `$sidObj = New-Object System.Security.Principal.SecurityIdentifier($sid)` and passes `$sidObj`; it also verifies the resulting protected single ACE. See the top note.
 
 Create `src/platform/windows/security.ts` with this implementation shape:
 
@@ -496,6 +512,8 @@ Expected: FAIL because the modules do not exist.
 
 Create `src/platform/windows/builders.ts` for `windowsLauncher`, `windowsTaskXml`, and `serviceStatusFromQuery`; create `src/platform/windows/firewall.ts` for the rule commands.
 
+> **Superseded snippet:** the `.cmd` launcher, `cmd.exe /d /s /c` action, and English-only status parsing below are the original design. Final behavior is the UTF-8 BOM `.ps1` launcher run by PowerShell, UTF-16LE BOM task XML bytes, and `Get-ScheduledTask` State (see "Implementation deviations and final behavior" at the top).
+
 `src/platform/windows/firewall.ts`:
 
 ```ts
@@ -585,7 +603,7 @@ export function serviceStatusFromQuery(stdout: string): { installed: boolean; ru
 }
 ```
 
-Use the exact `cmd.exe /d /s /c "<home>\\bridge-service.cmd"` action. Escape XML. Keep the task name, `InteractiveToken`, `LeastPrivilege`, hidden, and restart settings. `serviceStatusFromQuery` tests both running and stopped fixtures.
+Superseded final action: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "<home>\\bridge-service.ps1"`, with the task XML written as UTF-16LE with a BOM. Escape XML. Keep the task name, `InteractiveToken`, `LeastPrivilege`, hidden, and restart settings. `serviceStatusFromQuery` remains only a fallback parser for English `schtasks` output; the primary status source is the locale-independent `Get-ScheduledTask` State.
 
 - [ ] **Step 4: Run builder tests and commit**
 
@@ -621,6 +639,8 @@ Expected: FAIL because the Windows service manager and fallback do not exist.
 - [ ] **Step 3: Implement the Windows service manager**
 
 Implement `src/platform/windows/service.ts` with this transaction shape:
+
+> **Superseded snippet:** the `.cmd` launcher path, BOM-less XML, launcher deletion before elevation succeeds, and `schtasks /Query` status below are the original design. Final behavior stages the `.ps1` launcher, writes UTF-16LE XML with a BOM, preserves the previous install on cancel/failure, and uses `Get-ScheduledTask` State (see the top note).
 
 ```ts
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -716,7 +736,7 @@ try {
 
 `service install` standalone must still exit 1 on the same error. The `up` path must not claim the service is running when the install failed.
 
-Implement `status` with `schtasks /Query /TN "PocketPet Bridge" /FO LIST /V`; implement `uninstall` with one elevated helper and idempotent rule removal. Use injected runners for unit tests. Update the setup System card to call `platform.service.status()` on Windows; a stopped task reports `running: false`.
+Implement `status` with `Get-ScheduledTask -TaskName "PocketPet Bridge" | Select-Object -ExpandProperty State` and `Get-ScheduledTaskInfo` (locale-independent; `schtasks /Query` text parsing only as fallback); implement `uninstall` with one elevated helper, idempotent rule removal, and a verified task deletion. Use injected runners for unit tests. Update the setup System card to call `platform.service.status()` on Windows; a stopped task reports `running: false`.
 
 Update `platformFor("win32")` to return the Windows bundle. Update `runService`/`runUp` to pass `port: config.port`; when Windows install fails, print the exact elevated command and continue foreground in `up`; standalone `service install` still exits 1. Update `server.ts` to use `platform.service.status()` for the setup System card on Windows.
 
