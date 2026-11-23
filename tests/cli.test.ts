@@ -10,16 +10,20 @@ import { liveLocalHostnameUntil, main, hasPocketPetHooks, hasQoderHooks, printPa
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
+import { platform } from "../src/platform/index.js";
 import type { Platform, ServiceManager } from "../src/platform/types.js";
 import type { Bridge } from "../src/server.js";
+import { testSecurity } from "./helpers/test-platform.js";
 
 let home = "";
 let claudeDir = "";
 let userHome = "";
 let savedHome: string | undefined;
 let savedUserHome: string | undefined;
+let savedUserProfile: string | undefined;
 let savedClaudeConfigDir: string | undefined;
 let savedLang: string | undefined;
+let platformSpies: Array<{ mockRestore(): void }> = [];
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "pocketpet-cli-"));
@@ -27,19 +31,38 @@ beforeEach(() => {
   userHome = mkdtempSync(join(tmpdir(), "pocketpet-user-"));
   savedHome = process.env.POCKETPET_HOME;
   savedUserHome = process.env.HOME;
+  savedUserProfile = process.env.USERPROFILE;
   savedClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR;
   savedLang = process.env.POCKETPET_LANG;
   process.env.POCKETPET_HOME = home;
   process.env.HOME = userHome;
+  // Windows resolves os.homedir() from USERPROFILE; keep Qoder paths off the real profile.
+  process.env.USERPROFILE = userHome;
   process.env.CLAUDE_CONFIG_DIR = claudeDir;
   process.env.POCKETPET_LANG = "en";
+  platformSpies = [];
+  if (process.platform === "win32") {
+    // In-process CLI tests exercise command logic, not the real ACL/firewall
+    // probes. Real Windows adapters are covered by windows*.test.ts and the
+    // Windows integration job; this keeps unit tests off PowerShell/netsh.
+    platformSpies = [
+      vi.spyOn(platform.security, "protectHome").mockImplementation(() => {}),
+      vi.spyOn(platform.security, "protectLogs").mockImplementation(() => {}),
+      vi.spyOn(platform.security, "protectFile").mockImplementation(() => {}),
+      vi.spyOn(platform.host, "startAdvertisement").mockResolvedValue(false),
+    ];
+  }
 });
 
 afterEach(() => {
+  for (const spy of platformSpies) spy.mockRestore();
+  platformSpies = [];
   if (savedHome === undefined) delete process.env.POCKETPET_HOME;
   else process.env.POCKETPET_HOME = savedHome;
   if (savedUserHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedUserHome;
+  if (savedUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = savedUserProfile;
   if (savedClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
   else process.env.CLAUDE_CONFIG_DIR = savedClaudeConfigDir;
   if (savedLang === undefined) delete process.env.POCKETPET_LANG;
@@ -291,7 +314,7 @@ describe("pocketpet cli usage", () => {
 
 describe("pocketpet cli error handling", () => {
   it("service install surfaces the compiled-CLI refusal without touching launchd", async () => {
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
 
     const { code, output } = await runMain(["service", "install"]);
 
@@ -319,13 +342,13 @@ describe("pocketpet cli error handling", () => {
   });
 
   it("run never surfaces a raw thrown error", async () => {
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const blocked = createServer();
     await new Promise<void>((resolve) => blocked.listen(0, "0.0.0.0", resolve));
     try {
       const address = blocked.address();
       if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
-      saveConfig(home, { ...config, port: address.port });
+      saveConfig(home, { ...config, port: address.port }, testSecurity);
 
       const { code, output } = await runMain(["run"]);
 
@@ -358,7 +381,7 @@ describe("Windows service CLI fallback", () => {
     return vi.fn(async () =>
       ({
         port,
-        config: ensureConfig(home),
+        config: ensureConfig(home, process.env, testSecurity),
         aggregator: {} as never,
         broadcast: () => {},
         close: async () => {},
@@ -624,7 +647,7 @@ describe("Windows service CLI fallback", () => {
   });
 
   it("keeps standalone service install fatal on Windows cancellation", async () => {
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const platform = fakePlatform({
       install: vi.fn(async () => {
         throw new Error("install was cancelled at the elevation prompt");
@@ -641,7 +664,7 @@ describe("Windows service CLI fallback", () => {
   });
 
   it("prints the exact elevated install command when a Windows install fails", async () => {
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const platform = fakePlatform({
       install: vi.fn(async () => {
         throw new Error("elevated install failed (exit 1)");
@@ -662,7 +685,7 @@ describe("Windows service CLI fallback", () => {
   });
 
   it("keeps the platform-appropriate build advice off Windows", async () => {
-    ensureConfig(home);
+    ensureConfig(home, process.env, testSecurity);
     const platform = fakePlatform({
       install: vi.fn(async () => {
         throw new Error("launchctl bootstrap failed");
@@ -677,7 +700,7 @@ describe("Windows service CLI fallback", () => {
   });
 
   it("uses the platform service label for status messages", async () => {
-    ensureConfig(home);
+    ensureConfig(home, process.env, testSecurity);
     const platform = fakePlatform({ status: vi.fn(async () => ({ installed: true, running: true })) });
 
     const { result, output } = await capture(() => runService("status", { platform }));

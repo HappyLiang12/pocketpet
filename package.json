@@ -35,7 +35,8 @@
     "dev": "tsx src/cli.ts run",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "test:windows-integration": "node scripts/windows-integration.mjs"
   },
   "dependencies": {
     "multicast-dns": "^7.2.5",

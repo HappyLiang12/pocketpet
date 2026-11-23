@@ -6,6 +6,7 @@ import { ensureConfig } from "../src/config.js";
 import { CLAUDE_HOOK_EVENTS } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { doctorChecks } from "../src/doctor.js";
+import { testSecurity } from "./helpers/test-platform.js";
 
 let home = "";
 afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }); });
@@ -38,6 +39,8 @@ describe("doctorChecks", () => {
       qoderSettingsPaths: [qoderPath()],
       localPetDirs: [join(home, "pets")],
       probePort: async () => false,
+      // Generic doctor behavior, not Windows probes: keep this pure on every host.
+      platformName: "darwin",
     });
     expect(checks.find((c) => c.name === "config")?.status).toBe("FAIL");
     expect(checks.find((c) => c.name === "claude hooks")?.status).toBe("FAIL");
@@ -49,7 +52,7 @@ describe("doctorChecks", () => {
 
   it("passes when config and all hooks exist on macOS", async () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    ensureConfig(home);
+    ensureConfig(home, process.env, testSecurity);
     const settingsPath = join(home, "settings.json");
     writeFileSync(settingsPath, JSON.stringify({ hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: "pocketpet hook claude" }] }]])) }));
     const checks = await doctorChecks({
