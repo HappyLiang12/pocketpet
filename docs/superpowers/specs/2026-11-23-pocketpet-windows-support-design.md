@@ -131,7 +131,7 @@ existing runner shape and refusal to install a source `.ts` CLI.
   the un-elevated process with current-user ACL, so a UAC elevation that
   requires a different admin account still exposes no user secret. The task
   principal remains the signed-in user. The Node CLI then waits for `/health`.
-- Status queries the scheduled task without elevation using the locale-independent `Get-ScheduledTask` State value (with `Get-ScheduledTaskInfo` for the last result). English `schtasks` text parsing is only a fallback, because `schtasks` labels are localized. A task that exists but
+- Status queries the scheduled task without elevation using the locale-independent `Get-ScheduledTask` State value. `Get-ScheduledTaskInfo` last result/run time is read by the acceptance probe for diagnostics only, not by `service status`. English `schtasks` text parsing is only a fallback, because `schtasks` labels are localized. A task that exists but
   is not running reports `running: false`; the setup System card uses the same
   status on Windows instead of `null`.
 - Uninstall ends and deletes the task, removes all PocketPet firewall rules,

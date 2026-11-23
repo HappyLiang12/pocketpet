@@ -35,9 +35,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows-acceptan
 
 - Pass `-Port` when the configured port is not 7788.
 - Pass `-Hostname` only when the advertised `.local` name differs from the sanitized computer name.
-- Pass `-NodePath` when the Node on `PATH` is not the executable recorded in the service task; the firewall gate compares the rule's program scope with it.
-- The output is one JSON object with `PASS`, `FAIL`, and `NOT RUN` gates plus `host`, `node`, `config`, `service`, `firewall`, `bridge`, and `mdns` evidence.
-- The probe reads only path existence, ACL state (`icacls` entries and the inheritance flag), the scheduled task state, firewall rule properties, the token-free loopback `/health` response, and a multicast DNS A answer. It never reads config content and never prints the token.
+- Pass `-NodePath` when the `node` on `PATH` is not the Node executable recorded by the installed launcher and firewall rules; the firewall gate compares each rule's program scope with it. The Task Scheduler action itself runs `powershell.exe -File <home>\bridge-service.ps1`, not `node`.
+- Pass `-HomePath` when `POCKETPET_HOME` is not set in this shell or the home is not `%USERPROFILE%\.pocketpet`.
+- The output is one JSON object with `PASS`, `FAIL`, and `NOT RUN` gates plus `host`, `node`, `config`, `service`, `firewall`, `bridge`, and `mdns` evidence. The process exits 1 when any gate is `FAIL` and 0 otherwise; `NOT RUN` alone still exits 0, so expect exit 1 before the service is installed.
+- The probe reads only path existence, ACL state (`icacls` entries and the inheritance flag), the scheduled task state, firewall rule properties, the token-free loopback `/health` response, and a multicast DNS A answer. It never reads config content and never prints the token. `Get-ScheduledTask` State is the same signal as `service status`; `Get-ScheduledTaskInfo` last result/run time is read for diagnostics and probe evidence only.
 - The probe's `.local` gate runs on the bridge host itself, so same-host multicast filtering can produce a false FAIL. A system-resolver answer is indicative only; the phone-side gate below is authoritative.
 
 Paste the JSON (with the built-in redaction) into the evidence block for each related gate.
@@ -51,7 +52,7 @@ Paste the JSON (with the built-in redaction) into the evidence block for each re
 | 3 | `.local` resolves from iPhone Safari and Android Chrome on the same LAN | Windows 11 x64, Private network | NOT RUN | Probe `mdns` object, phone screenshots with URL visible |
 | 4 | Firewall rules are inbound allow, Private-profile only, correct port/UDP 5353, scoped to Node, and the phone can reach the bridge | Windows 11 x64, Private network | NOT RUN | Probe `firewall` object, `Get-NetFirewallRule` output, phone screenshot |
 | 5 | Config protection: home/config/logs/launcher are current-user-only; another standard user cannot read `config.json` | Windows 11 x64 with a second standard user | NOT RUN | Probe `config` object, `icacls` output (redacted), second-user access-denied observation |
-| 6 | UAC cancel fallback; firewall/mDNS failure degradation; no false success | Windows 11 x64 | NOT RUN | `pocketpet up` output, service exit codes, probe/doctor output, foreground fallback |
+| 6 | UAC cancel fallback; start-time firewall gating for `.local` after a rule is deleted; no false success | Windows 11 x64 | NOT RUN | `pocketpet up` output, service exit codes, probe/doctor output before and after restart, restored rule state |
 | 7 | Official Windows 11 x64 real-machine gate on Node 24 (the issue environment), including upgrade from a prior install | Windows 11 x64, Node 24 | NOT RUN | Full command log, probe JSON, installed versions |
 | 8 | Qoder real-app hook observation: a real Qoder task drives the phone pet | Windows 11 x64 with Qoder desktop | NOT RUN | Qoder version, hook settings excerpt (no token), phone screen recording; wiring alone is not a pass |
 | 9 | macOS regression: existing unit/typecheck/build/E2E, final counts recorded | macOS current, Node 20+ | NOT RUN | Commands and counts in the sign-off block |
@@ -74,7 +75,7 @@ Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity chec
 
 **PASS criteria**
 
-- `pocketpet up` prints the config path, the pairing URLs, a full-size QR, and the USB fallback; it never prints the token inside the service log.
+- On a normal LAN run `pocketpet up` prints the config path, the LAN pairing URLs, and a full-size QR; it never prints the token inside the service log. The terminal USB fallback (`adb reverse ...`) is printed only when no LAN URL or QR exists, while the `/setup` Pair card always shows the USB command.
 - `/setup` opens only on the computer; the phone opens the phone page, not `/setup`.
 - The phone page connects, the pet and clock render, and Studio saves a local override that survives reload.
 - The probe reports `PASS` for `host` (Windows 11 x64), `node`, `config ACL`, `scheduled task`, `firewall`, and `loopback health` when the service is installed and running.
@@ -101,7 +102,7 @@ Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity chec
 
 **PASS criteria**
 
-- Install asks for one UAC prompt; cancel has no side effects. Uninstall asks for one UAC prompt.
+- Install asks for one UAC prompt; cancel leaves no task, firewall rule, or launcher behind (the empty `logs` directory may be created first). Uninstall asks for one UAC prompt.
 - `service status` exits 0 only when the task is running; a stopped or missing task exits 1.
 - After logon the hidden task starts the bridge with no UAC prompt and the phone reconnects.
 - The log is append-only at `%USERPROFILE%\.pocketpet\logs\bridge.log` (or the configured home) and contains only the fixed listening line, never the token, URLs, or QR.
@@ -120,7 +121,7 @@ Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity chec
 
 **Steps**
 
-1. Install the service (the firewall rules are required for advertisement) and confirm the bridge is healthy.
+1. Install the service (the firewall rules must exist when the bridge starts for advertisement) and confirm the bridge is healthy.
 2. On iPhone Safari, open the printed `http://<name>.local:<port>/?token=...` URL.
 3. On Android Chrome, open the same URL.
 4. Run the probe's `mdns` gate.
@@ -193,16 +194,24 @@ Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity chec
 
 1. Start from a machine with no PocketPet task and no PocketPet firewall rules.
 2. Run `pocketpet up`, choose the service, and cancel the UAC prompt.
-3. Record the exit code, the printed retry command, and the foreground bridge pairing.
-4. Run `pocketpet service install` directly and cancel the UAC prompt; record the exit code.
-5. After `pocketpet service uninstall` (or on a machine that never installed the service), run `pocketpet run` in the foreground and confirm IP/USB pairing works and no `.local` name is claimed.
-6. From an elevated PowerShell, temporarily disable one PocketPet firewall rule (then restore it) and confirm the doctor/probe report WARN/FAIL and `.local` is not advertised.
+3. Record the exit code, the printed retry command, and the foreground bridge pairing. Confirm no task, rule, or launcher exists (an empty `logs` directory may exist).
+4. Run `pocketpet service install` directly and cancel the UAC prompt; record the nonzero exit code and confirm no task, rule, or launcher exists.
+5. Stop the foreground bridge, then run `pocketpet run` on the machine with no rules. Confirm IP/USB pairing works, `/health` reports `localHostname: null`, and no `.local` name is claimed.
+6. Install the service normally and accept the one UAC prompt. Confirm both rules exist, `pocketpet doctor` reports `PASS firewall` and `PASS mdns`, and the probe reports `PASS` for `firewall` and `mdns .local`.
+7. In an elevated PowerShell, delete only the mDNS rule and keep the TCP rule: `Remove-NetFirewallRule -DisplayName 'PocketPet Bridge mDNS'`. Do not reinstall the service, because install re-adds both rules. Run the probe once now: record the firewall result and whether `.local` still answers. The bridge does not re-check the rules at runtime and does not stop a responder it already started, but the changed firewall can block the probe's own query, so record what is observed.
+8. Restart the bridge so it evaluates the rules at start, in the same elevated shell: `Stop-ScheduledTask -TaskName 'PocketPet Bridge'; Start-ScheduledTask -TaskName 'PocketPet Bridge'` (or sign out and back in for a logon start). Wait for `http://127.0.0.1:<port>/health`.
+9. Run `pocketpet doctor` and the probe. Record `localHostname`, the `mdns` result, and the firewall result.
+10. Restore the rule by rerunning `pocketpet service install` (one UAC prompt), wait for `/health`, and confirm `.local` is advertised again.
+
+Disabling the rule instead of deleting it is a diagnostic variant only: the advertisement gate is a rule-name presence check, so a disabled rule can still start the responder while `doctor`/probe report the content mismatch. Record it as WARN/FAIL evidence, not as a start-time gating test.
 
 **PASS criteria**
 
-- A canceled UAC leaves no task, rules, or launcher behind; `up` continues in the foreground and prints the exact elevated retry command without a token; standalone `service install` exits nonzero.
+- A canceled UAC leaves no task, rules, or launcher behind (the empty `logs` directory is not a failure); `up` continues in the foreground and prints the exact elevated retry command without a token; standalone `service install` exits nonzero.
 - With no firewall rules, `.local` is null and the IP QR/USB fallback works; no false "service running" or `.local` claim is printed.
-- A firewall content mismatch or missing rule is reported as WARN/FAIL, not PASS.
+- Deleting the mDNS rule while the bridge runs does not make the bridge stop the responder it already started; record whether `.local` still answers. After the bridge is restarted with the rule missing, `.local` is not advertised, `/health` reports `localHostname: null`, `doctor` reports WARN for `firewall` and `mdns`, and the probe reports FAIL (or at least not PASS) for those gates.
+- Restoring the rule and restarting the bridge makes `.local` advertised again.
+- A firewall content mismatch, disabled rule, or missing rule is reported as WARN/FAIL, never PASS.
 
 **Result:** NOT RUN
 

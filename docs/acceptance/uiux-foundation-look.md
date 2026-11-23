@@ -55,7 +55,7 @@ edit was needed.
 | Keyboard-only Studio (setup and phone) | Tester | Keyboard sequence and screenshot | NOT RUN |
 | No horizontal overflow at folded/wide | Tester | Screenshots | NOT RUN |
 | macOS real host | Tester | Screenshot and exact OS label | NOT RUN |
-| Windows/Linux host | Tester | Not claimed; separate spec | NOT RUN |
+| Windows/Linux host | Tester | Not claimed here; Windows 11 x64 has a separate record in [windows-support.md](windows-support.md) (NOT RUN); Linux is not claimed | NOT RUN |
 | Real agent event flow | Tester | Not part of this slice | NOT RUN |
 | Real update/auto-update | Tester | Not part of this slice | NOT RUN |
 
