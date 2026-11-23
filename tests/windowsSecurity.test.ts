@@ -62,6 +62,9 @@ describe("Windows private paths", () => {
     expect(gate).toContain("FullControl");
     expect(gate).toContain("IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid");
     expect(gate).toContain("[int]$r.InheritanceFlags -eq $requiredInheritance");
+    // An inherited or InheritOnly ACE for the same SID must not count as exact.
+    expect(gate).toContain("[int]$r.PropagationFlags -eq 0");
+    expect(gate).toContain("$r.IsInherited -eq $false");
   });
 
   it("builds the ACE from a SecurityIdentifier object, never the SID string", () => {
@@ -85,6 +88,8 @@ describe("Windows private paths", () => {
     // Directories require exactly ContainerInherit|ObjectInherit (mask 3) for
     // the idempotence gate, so a repeat protection stays a read-only no-op.
     expect(homeScript).toContain("$requiredInheritance=3");
+    expect(homeScript).toContain("[int]$r.PropagationFlags -eq 0");
+    expect(homeScript).toContain("$r.IsInherited -eq $false");
     const homeEarlyExit = homeScript.indexOf("exit 0");
     expect(homeEarlyExit).toBeGreaterThan(-1);
     expect(homeEarlyExit).toBeLessThan(homeScript.indexOf("SetAccessRuleProtection"));
@@ -95,7 +100,11 @@ describe("Windows private paths", () => {
     expect(logsScript).toContain("ContainerInherit,ObjectInherit");
     expect(logsScript).toContain("logs");
     expect(logsScript).toContain("$requiredInheritance=3");
-    expect(logsScript.indexOf("exit 0")).toBeLessThan(logsScript.indexOf("SetAccessRuleProtection"));
+    expect(logsScript).toContain("[int]$r.PropagationFlags -eq 0");
+    expect(logsScript).toContain("$r.IsInherited -eq $false");
+    const logsEarlyExit = logsScript.indexOf("exit 0");
+    expect(logsEarlyExit).toBeGreaterThan(-1);
+    expect(logsEarlyExit).toBeLessThan(logsScript.indexOf("SetAccessRuleProtection"));
   });
 
   it("escapes single quotes in the protected path", () => {

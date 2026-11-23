@@ -96,9 +96,11 @@ function protectScript(path: string, sid: string, kind: "dir" | "file"): string 
     "$sidObj=New-Object System.Security.Principal.SecurityIdentifier($sid);",
     "$acl=Get-Acl -LiteralPath $p;",
     // Idempotence gate: only the exact required DACL skips the mutation below.
+    // An inherited entry, or an InheritOnly entry (PropagationFlags), for the
+    // same SID is not exact and must fall through to the replacement path.
     `$requiredInheritance=${inheritanceMask};`,
     "$alreadyExact=$false;",
-    "if($acl.AreAccessRulesProtected -and $acl.Access.Count -eq 1){$r=$acl.Access[0];if($r.AccessControlType -eq 'Allow' -and $r.FileSystemRights.ToString().Contains('FullControl') -and [int]$r.InheritanceFlags -eq $requiredInheritance){try{$alreadyExact=($r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid)}catch{$alreadyExact=$false}}};",
+    "if($acl.AreAccessRulesProtected -and $acl.Access.Count -eq 1){$r=$acl.Access[0];if($r.AccessControlType -eq 'Allow' -and $r.FileSystemRights.ToString().Contains('FullControl') -and [int]$r.InheritanceFlags -eq $requiredInheritance -and [int]$r.PropagationFlags -eq 0 -and $r.IsInherited -eq $false){try{$alreadyExact=($r.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid)}catch{$alreadyExact=$false}}};",
     "if($alreadyExact -eq $true){exit 0};",
     "$acl.SetAccessRuleProtection($true,$false);",
     "foreach($r in @($acl.Access)){$null=$acl.RemoveAccessRule($r)};",
