@@ -14,6 +14,7 @@ import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth
 import { pickLanguage } from "./i18n.js";
 import { pairingLinks } from "./onboarding.js";
 import { platform } from "./platform/index.js";
+import type { HostIdentity } from "./platform/types.js";
 import { setupAssets, setupDeniedHtml, setupPageHtml } from "./setupPage.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
@@ -30,6 +31,8 @@ export interface BridgeOptions {
   flashMs?: number;
   localPetDirs?: string[];
   probeService?: () => Promise<boolean>;
+  /** Host adapter that owns the `.local` name; defaults to the active platform. */
+  host?: HostIdentity;
 }
 
 export interface Bridge {
@@ -138,6 +141,7 @@ export async function setupServiceRunning(probe: () => Promise<boolean>): Promis
 
 export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   const { home, config } = opts;
+  const hostAdapter = opts.host ?? platform.host;
   const fetchImpl = opts.fetchImpl ?? fetch;
   const now = opts.now ?? Date.now;
   const aggregator = new Aggregator({ now, ttlMs: opts.ttlMs, flashMs: opts.flashMs });
@@ -209,6 +213,8 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   // Assigned from the real socket address after listen so `/setup` links use the actual port
   // (tests listen on port 0, which differs from config.port).
   let port = opts.port ?? config.port;
+  // True only while the host adapter serves A records for its `.local` name.
+  let advertised = false;
 
   const server = createServer(async (req, res) => {
     try {
@@ -243,7 +249,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
           });
           return res.end(setupDeniedHtml(port, lang));
         }
-        const hostname = platform.host.localHostname();
+        const hostname = advertised ? hostAdapter.localHostname() : null;
         const links = pairingLinks(port, config.token, { hostname });
         let qrSvg = "";
         if (links.qrUrl) {
@@ -404,12 +410,27 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
   const address = server.address();
   port = typeof address === "object" && address ? address.port : (opts.port ?? config.port);
 
+  // Advertise only after the HTTP listener is up: `.local` links must work the
+  // moment they are printed, and a refused advertisement leaves the bridge healthy.
+  try {
+    advertised = await hostAdapter.startAdvertisement();
+  } catch {
+    advertised = false;
+  }
+
   return {
     port,
     config,
     aggregator,
     broadcast,
     close: async () => {
+      try {
+        await hostAdapter.stopAdvertisement();
+      } catch {
+        // The listener below still has to close even if the responder does not stop.
+      } finally {
+        advertised = false;
+      }
       for (const client of wsClients) client.close();
       wss.close();
       server.closeIdleConnections();
