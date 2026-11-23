@@ -360,7 +360,7 @@ describe("Windows service transaction", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("protects logs, stages a temp launcher, then ends, adds rules, registers, and starts the task", async () => {
+  it("protects logs, stages a temp launcher, then stops, adds rules, registers, and starts the task", async () => {
     const { deps, scripts, order, runs } = fakeDeps();
 
     await installWindowsService(cfg, deps);
@@ -376,17 +376,25 @@ describe("Windows service transaction", () => {
     expect(scripts).toHaveLength(1);
     const script = scripts[0]!;
     const priorTaskCheck = script.indexOf("$hadTask = ");
-    const end = script.indexOf(`/End /TN 'PocketPet Bridge'`);
+    const stop = script.indexOf(`Stop-ScheduledTask -TaskName 'PocketPet Bridge'`);
     const staleDeletes = script.indexOf("'delete' 'rule'");
     const firewallAdds = script.indexOf("'add' 'rule'");
     const create = script.indexOf(`/Create /TN 'PocketPet Bridge' /XML $xmlPath /F`);
     expect(priorTaskCheck).toBeGreaterThanOrEqual(0);
     expect(priorTaskCheck).toBeLessThan(script.indexOf("try {"));
-    expect(end).toBeGreaterThanOrEqual(0);
-    // An existing task is ended before /Create /F replaces it.
-    expect(end).toBeLessThan(staleDeletes);
+    expect(stop).toBeGreaterThanOrEqual(0);
+    // An existing task is stopped before /Create /F replaces it.
+    expect(stop).toBeLessThan(staleDeletes);
     expect(staleDeletes).toBeLessThan(firewallAdds);
     expect(firewallAdds).toBeLessThan(create);
+    // Task probes, stop, and rollback use the cmdlets, never native schtasks:
+    // PowerShell 5.1 turns absent-task stderr into a terminating error.
+    expect(script).toContain(`$existing = Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    expect(script).not.toMatch(/schtasks\.exe \/Query/);
+    expect(script).not.toMatch(/schtasks\.exe \/End/);
+    expect(script).not.toMatch(/schtasks\.exe \/(?:Delete|Run)/);
+    expect(script).toContain(`Start-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    expect(script).toContain(`Unregister-ScheduledTask -TaskName 'PocketPet Bridge' -Confirm:$false -ErrorAction SilentlyContinue`);
     // The task is started only after the launcher is in place, never inside the
     // elevation (where the previous launcher is still the one on disk).
     expect(script.slice(script.indexOf("try {"), script.indexOf("} catch {"))).not.toContain("/Run");
@@ -452,7 +460,7 @@ describe("Windows service transaction", () => {
     expect(script).not.toMatch(/token=|pairing|\?t=/i);
   });
 
-  it("rolls back firewall rules and the task on a fresh install failure and leaves no launcher", async () => {
+  it("rolls back firewall rules and unregisters the task on a fresh install failure and leaves no launcher", async () => {
     const { deps, scripts } = fakeDeps({ elevatedStatus: 1 });
 
     await expect(installWindowsService(cfg, deps)).rejects.toThrow(/elevated install failed \(exit 1\)/);
@@ -465,13 +473,19 @@ describe("Windows service transaction", () => {
     expect(catchIndex).toBeGreaterThan(0);
     const rollback = script.slice(catchIndex);
     const ruleRemovals = rollback.indexOf("'delete' 'rule'");
-    const taskRemoval = rollback.indexOf("/Delete");
+    const taskPresence = rollback.indexOf(`$created = Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    const stop = rollback.indexOf(`Stop-ScheduledTask -TaskName 'PocketPet Bridge'`);
+    const unregister = rollback.indexOf(`Unregister-ScheduledTask -TaskName 'PocketPet Bridge' -Confirm:$false`);
     expect(ruleRemovals).toBeGreaterThanOrEqual(0);
-    expect(taskRemoval).toBeGreaterThanOrEqual(0);
-    expect(ruleRemovals).toBeLessThan(taskRemoval);
+    // A fresh-install cleanup probes with the cmdlet, so an absent task is a no-op.
+    expect(taskPresence).toBeGreaterThan(ruleRemovals);
+    expect(stop).toBeGreaterThan(taskPresence);
+    expect(unregister).toBeGreaterThan(stop);
+    // Never shell out for the cleanup: absent-task stderr is a PS 5.1 terminating error.
+    expect(rollback).not.toContain("schtasks.exe /Delete");
+    expect(rollback).not.toContain("/Delete");
     expect(rollback).toContain(FIREWALL_TCP);
     expect(rollback).toContain(FIREWALL_MDNS);
-    expect(rollback).toContain("/TN 'PocketPet Bridge' /F");
   });
 
   it("restores a previously installed task instead of deleting it when an upgrade fails", async () => {
@@ -485,7 +499,8 @@ describe("Windows service transaction", () => {
     expect(rollback).toContain("if ($hadTask)");
     // A prior install is restarted; only a fresh install is cleaned up.
     expect(rollback.indexOf("if ($hadTask)")).toBeLessThan(rollback.indexOf("'delete' 'rule'"));
-    expect(rollback).toMatch(/\} catch \{ if \(\$hadTask\) \{ .*\/Run .*\} else \{/);
+    expect(rollback).toContain(`Start-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    expect(rollback).not.toMatch(/schtasks\.exe \/Run/);
   });
 
   it("reports a failed task start instead of claiming the service is running", async () => {
@@ -563,7 +578,7 @@ describe("Windows service uninstall", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("ends and deletes the task, verifies it is gone, then removes both firewall rules in one elevation", async () => {
+  it("stops and unregisters the task, verifies it is gone, then removes both firewall rules in one elevation", async () => {
     writeFileSync(launcher, windowsLauncherBytes(cfg));
     const { deps, scripts } = fakeDeps();
     const service = createWindowsService(deps);
@@ -572,16 +587,23 @@ describe("Windows service uninstall", () => {
 
     expect(scripts).toHaveLength(1);
     const script = scripts[0]!;
-    const end = script.indexOf("/End");
-    const taskRemoval = script.indexOf("/Delete");
-    const verify = script.indexOf("/Query");
+    const presence = script.indexOf(`$task = Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    const stop = script.indexOf(`Stop-ScheduledTask -TaskName 'PocketPet Bridge'`);
+    const unregister = script.indexOf(`Unregister-ScheduledTask -TaskName 'PocketPet Bridge' -Confirm:$false`);
+    const verify = script.indexOf(`$remaining = Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
     const ruleRemoval = script.indexOf("'delete' 'rule'");
-    expect(end).toBeGreaterThanOrEqual(0);
-    expect(end).toBeLessThan(taskRemoval);
-    // A failed delete must exit nonzero instead of reporting success.
-    expect(taskRemoval).toBeLessThan(verify);
+    expect(presence).toBeGreaterThanOrEqual(0);
+    // A missing task is a clean no-op because presence gates the cmdlets.
+    expect(presence).toBeLessThan(stop);
+    expect(stop).toBeGreaterThanOrEqual(0);
+    expect(stop).toBeLessThan(unregister);
+    // A task that survives the unregister must exit nonzero instead of reporting success.
+    expect(unregister).toBeLessThan(verify);
+    expect(verify).toBeGreaterThanOrEqual(0);
     expect(verify).toBeLessThan(ruleRemoval);
-    expect(script).toContain("if ($LASTEXITCODE -eq 0) { throw 'task deletion failed' }");
+    expect(script).toContain("if ($null -ne $remaining) { throw 'task deletion failed' }");
+    // No native schtasks on the absent-task path: PS 5.1 turns its stderr into a throw.
+    expect(script).not.toContain("schtasks");
     // Rule deletion stays idempotent: a missing rule must not fail the uninstall.
     expect(script.trimEnd().endsWith("exit 0")).toBe(true);
     expect(script).toContain(FIREWALL_TCP);
@@ -613,7 +635,13 @@ describe("Windows service uninstall", () => {
 
     await expect(service.uninstall(cfg)).resolves.toBeUndefined();
     expect(scripts).toHaveLength(1);
-    expect(scripts[0]).toContain("2>$null");
+    const script = scripts[0]!;
+    // The missing task is a clean no-op: presence is probed with the cmdlet and
+    // no native command can emit stderr that PS 5.1 would turn into a throw.
+    expect(script).toContain(`Get-ScheduledTask -TaskName 'PocketPet Bridge' -ErrorAction SilentlyContinue`);
+    expect(script).toContain("if ($null -ne $task)");
+    expect(script).not.toContain("2>$null");
+    expect(script).not.toContain("schtasks");
   });
 });
 
@@ -683,6 +711,33 @@ describe("Windows elevation runner", () => {
 
   it("fails closed when the encoded command exceeds the Windows command line limit", async () => {
     await expect(defaultElevatedRunner("x".repeat(50_000))).rejects.toThrow(/command line limit/i);
+  });
+
+  it("probes, stops, and rolls back tasks with ScheduledTasks cmdlets instead of native schtasks", () => {
+    const install = windowsInstallScript(windowsCfgFixture, SID);
+    const uninstall = windowsUninstallScript();
+    const task = `'PocketPet Bridge'`;
+
+    for (const [name, script] of [
+      ["install", install],
+      ["uninstall", uninstall],
+    ] as const) {
+      // PowerShell 5.1 turns native stderr into a terminating error even when
+      // redirected, so missing-task probes must never reach schtasks.
+      expect(script, name).not.toMatch(/schtasks\.exe \/(?:Query|End|Delete|Run)/);
+      expect(script, name).toContain(`Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue`);
+    }
+
+    // Registration stays on `schtasks /Create /XML` with the BOM-tagged file.
+    expect(install).toContain(`& schtasks.exe /Create /TN ${task} /XML $xmlPath /F;`);
+    expect(install).toContain(`Stop-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue`);
+    expect(install).toContain(`Start-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue`);
+    expect(install).toContain(`Unregister-ScheduledTask -TaskName ${task} -Confirm:$false -ErrorAction SilentlyContinue`);
+    // Uninstall stops, unregisters, and verifies absence of the task.
+    expect(uninstall).toContain(`Stop-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue`);
+    expect(uninstall).toContain(`Unregister-ScheduledTask -TaskName ${task} -Confirm:$false -ErrorAction SilentlyContinue`);
+    expect(uninstall).toContain(`$remaining = Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue`);
+    expect(uninstall).toContain("if ($null -ne $remaining) { throw 'task deletion failed' }");
   });
 
   it("builds install and uninstall scripts without secrets", () => {

@@ -72,19 +72,41 @@ const netsh = (args: string[]): string => `& netsh.exe ${args.map(psQuote).join(
 const removeRules = (): string[] => [FIREWALL_TCP, FIREWALL_MDNS].map((name) => netsh(firewallRemoveArgs(name)));
 
 /**
+ * Stop the task through the ScheduledTasks cmdlet and wait briefly until it is
+ * no longer `Running`. `schtasks /End` writes native stderr when the task is
+ * absent, and PowerShell 5.1 turns that into a terminating
+ * `NativeCommandError` under `$ErrorActionPreference = 'Stop'` even with a
+ * redirect, so a missing task must never be sent to the native tool.
+ */
+function stopTaskSteps(): string {
+  const task = psQuote(TASK_NAME);
+  return [
+    `Stop-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue;`,
+    `for ($i = 0; $i -lt 50; $i++) { $state = (Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue).State; if ($null -eq $state -or "$state" -ne 'Running') { break }; Start-Sleep -Milliseconds 100 };`,
+  ].join(" ");
+}
+
+/**
  * Token-free elevated install spec: firewall rules, task XML, registration.
  * The XML travels as base64 inside the encoded command; it is written to
  * `$env:TEMP` only for `schtasks /XML` and removed before the script ends.
  *
+ * Task existence, stop, and rollback use the ScheduledTasks cmdlets, never
+ * `schtasks /Query`, `/End`, or `/Delete`: on Windows PowerShell 5.1 native
+ * stderr from those commands is a terminating `NativeCommandError` under
+ * `$ErrorActionPreference = 'Stop'` even when redirected, so a missing task
+ * would abort a fresh install.
+ *
  * The launcher is not installed by this script: the caller replaces it only
  * after this elevation succeeds, so a cancelled prompt or a failed install
- * keeps the previous launcher and task. A previous task is ended before
+ * keeps the previous launcher and task. A previous task is stopped before
  * `/Create /F` replaces it, and a failed upgrade restarts that previous task
  * instead of deleting it. The new task is started by the caller after the
  * launcher is in place.
  */
 export function windowsInstallScript(cfg: ServiceConfig, sid: string): string {
   const xml64 = windowsTaskXmlBytes(windowsTaskXml(cfg, sid)).toString("base64");
+  const task = psQuote(TASK_NAME);
   const ruleSteps = firewallRules(cfg.port, cfg.nodePath).flatMap((rule) => [
     // A stale delete may legitimately fail when no rule exists; a current add may not.
     netsh(firewallRemoveArgs(rule.name)),
@@ -93,7 +115,10 @@ export function windowsInstallScript(cfg: ServiceConfig, sid: string): string {
   ]);
   const cleanup = [
     ...removeRules(),
-    `& schtasks.exe /Delete /TN ${psQuote(TASK_NAME)} /F 2>$null;`,
+    // `/Create /XML` may have registered the task before a later step failed.
+    // Probe with the cmdlet so an absent task is a clean no-op, then remove it.
+    `$created = Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue;`,
+    `if ($null -ne $created) { ${stopTaskSteps()} Unregister-ScheduledTask -TaskName ${task} -Confirm:$false -ErrorAction SilentlyContinue; }`,
   ].join(" ");
   return [
     "$ErrorActionPreference = 'Stop';",
@@ -101,35 +126,38 @@ export function windowsInstallScript(cfg: ServiceConfig, sid: string): string {
     `[IO.File]::WriteAllBytes($xmlPath, [Convert]::FromBase64String(${psQuote(xml64)}));`,
     // Remember whether a previous install exists so a failed upgrade can be
     // restored rather than destroying it.
-    `& schtasks.exe /Query /TN ${psQuote(TASK_NAME)} *> $null; $hadTask = ($LASTEXITCODE -eq 0);`,
+    `$existing = Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue; $hadTask = ($null -ne $existing);`,
     "try {",
     // Stop the previous bridge before /Create /F swaps the task definition.
-    `& schtasks.exe /End /TN ${psQuote(TASK_NAME)} 2>$null;`,
+    `if ($hadTask) { ${stopTaskSteps()} }`,
     ...ruleSteps,
-    `& schtasks.exe /Create /TN ${psQuote(TASK_NAME)} /XML $xmlPath /F;`,
+    `& schtasks.exe /Create /TN ${task} /XML $xmlPath /F;`,
     "if ($LASTEXITCODE -ne 0) { throw 'task registration failed' }",
     "Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue;",
     "} catch {",
     // A failed upgrade restores the previous task (its launcher is untouched);
     // a failed fresh install removes the rules and the task it just created.
-    `if ($hadTask) { & schtasks.exe /Run /TN ${psQuote(TASK_NAME)} 2>$null; } else { ${cleanup} }`,
+    `if ($hadTask) { Start-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue; } else { ${cleanup} }`,
     "Remove-Item -LiteralPath $xmlPath -Force -ErrorAction SilentlyContinue; throw }",
   ].join(" ");
 }
 
 /**
- * One elevation: end and delete the task, verify it is gone, then remove both
- * firewall rules. A task that survives the delete makes the script exit
- * nonzero so the caller never reports a failed uninstall as removed.
+ * One elevation: stop and unregister the task, verify it is gone, then remove
+ * both firewall rules. Every task step is a cmdlet so a missing task is a clean
+ * no-op (PowerShell 5.1 turns absent-task `schtasks` stderr into a terminating
+ * error). A task that survives the unregister makes the script exit nonzero so
+ * the caller never reports a failed uninstall as removed.
  */
 export function windowsUninstallScript(): string {
+  const task = psQuote(TASK_NAME);
   return [
     "$ErrorActionPreference = 'Stop';",
-    `& schtasks.exe /End /TN ${psQuote(TASK_NAME)} 2>$null;`,
-    `& schtasks.exe /Delete /TN ${psQuote(TASK_NAME)} /F 2>$null;`,
+    `$task = Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue;`,
+    `if ($null -ne $task) { ${stopTaskSteps()} Unregister-ScheduledTask -TaskName ${task} -Confirm:$false -ErrorAction SilentlyContinue; }`,
     // A missing task is fine for idempotency; one that still exists is a failure.
-    `& schtasks.exe /Query /TN ${psQuote(TASK_NAME)} *> $null;`,
-    "if ($LASTEXITCODE -eq 0) { throw 'task deletion failed' }",
+    `$remaining = Get-ScheduledTask -TaskName ${task} -ErrorAction SilentlyContinue;`,
+    "if ($null -ne $remaining) { throw 'task deletion failed' }",
     // Rule deletion stays best effort: netsh fails when no rule matches.
     ...removeRules(),
     "exit 0",
@@ -174,7 +202,7 @@ function assertElevated(result: CommandResult, action: "install" | "uninstall"):
 
 /**
  * Install transaction: validate, protect logs, stage the launcher, then run one
- * elevated helper that ends any previous task, adds firewall rules, and
+ * elevated helper that stops any previous task, adds firewall rules, and
  * registers the task. The previous launcher stays on disk until that elevation
  * succeeds; only then is the staged launcher renamed over it and the new task
  * started. Cancel or failure removes the staged copy and leaves the previous
