@@ -12,9 +12,9 @@ import { Aggregator, type Snapshot } from "./aggregator.js";
 import { parseEvent } from "./events.js";
 import { isAuthorized, isLoopback, isLoopbackHost, setTokenCookie } from "./auth.js";
 import { pickLanguage } from "./i18n.js";
-import { localHostname, pairingLinks } from "./onboarding.js";
+import { pairingLinks } from "./onboarding.js";
+import { platform } from "./platform/index.js";
 import { setupAssets, setupDeniedHtml, setupPageHtml } from "./setupPage.js";
-import { serviceStatus } from "./service.js";
 import { loadPetdexPets, type PetdexPet } from "./petdexManifest.js";
 import { scanLocalPets, type LocalPet } from "./pets.js";
 
@@ -230,7 +230,7 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
           });
           return res.end(setupDeniedHtml(port, lang));
         }
-        const hostname = localHostname();
+        const hostname = platform.host.localHostname();
         const links = pairingLinks(port, config.token, { hostname });
         let qrSvg = "";
         if (links.qrUrl) {
@@ -241,7 +241,12 @@ export async function startBridge(opts: BridgeOptions): Promise<Bridge> {
           }
         }
         const host = hostInfo();
-        const probeService = opts.probeService ?? (() => serviceStatus({ home, nodePath: process.execPath, cliPath: "" }));
+        const probeService =
+          opts.probeService ??
+          (() =>
+            platform.service
+              .status({ home, nodePath: process.execPath, cliPath: "", port: config.port })
+              .then((state) => state.running));
         const serviceRunning = process.platform === "darwin" ? await probeService().catch(() => false) : null;
         const assets = setupAssets(opts.webDist);
         const html = setupPageHtml({

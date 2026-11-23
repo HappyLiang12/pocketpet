@@ -13,8 +13,10 @@ import { installQoderHooks, qoderHookEventStatus, qoderSettingsPaths } from "./a
 import { mapQoderHook } from "./adapters/qoderHook.js";
 import { doctorChecks } from "./doctor.js";
 import { pairingCopy, pickLanguage } from "./i18n.js";
-import { askYesNo, localHostname, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
-import { SERVICE_LABEL, installService, serviceStatus, uninstallService, type ServiceConfig } from "./service.js";
+import { askYesNo, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
+import { platform } from "./platform/index.js";
+import { SERVICE_LABEL } from "./platform/darwin/service.js";
+import type { ServiceConfig } from "./platform/types.js";
 import { startBridge, type Bridge } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
@@ -367,7 +369,7 @@ export function printPairing(options: PairingOutput): void {
   const lang = pickLanguage(process.env.POCKETPET_LANG ?? process.env.LANG ?? null);
   const copy = pairingCopy[lang];
   const links = pairingLinks(options.port, options.token, {
-    hostname: localHostname(),
+    hostname: platform.host.localHostname(),
     qrHost: options.qrHost,
     interfaces: options.interfaces,
   });
@@ -449,11 +451,11 @@ async function runUp(args: string[]): Promise<number> {
     return 0;
   }
 
-  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url) };
+  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url), port: config.port };
   let installed = false;
   if (!options.noService) {
     try {
-      installed = await serviceStatus(serviceConfig);
+      installed = (await platform.service.status(serviceConfig)).running;
     } catch {
       installed = false;
     }
@@ -468,7 +470,7 @@ async function runUp(args: string[]): Promise<number> {
   if (serviceMode) {
     if (!installed) {
       try {
-        await installService(serviceConfig);
+        await platform.service.install(serviceConfig);
       } catch {
         console.error("Could not install the bridge service. Build the CLI and run `pocketpet service install` for details.");
         return 1;
@@ -503,16 +505,17 @@ async function runService(action: string | undefined): Promise<number> {
     return 2;
   }
   const home = pocketpetHome();
+  let config: Config;
   try {
-    ensureConfig(home);
+    config = ensureConfig(home);
   } catch {
     console.error(`config unreadable: ${configPath(home)}`);
     return 1;
   }
-  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url) };
+  const serviceConfig: ServiceConfig = { home, nodePath: process.execPath, cliPath: fileURLToPath(import.meta.url), port: config.port };
   if (action === "install") {
     try {
-      await installService(serviceConfig);
+      await platform.service.install(serviceConfig);
     } catch (error) {
       // The refusal message names the CLI path, never the token.
       console.error(serviceFailureMessage("install", error));
@@ -523,7 +526,7 @@ async function runService(action: string | undefined): Promise<number> {
   }
   if (action === "uninstall") {
     try {
-      await uninstallService(serviceConfig);
+      await platform.service.uninstall(serviceConfig);
     } catch (error) {
       console.error(serviceFailureMessage("uninstall", error));
       return 1;
@@ -531,7 +534,7 @@ async function runService(action: string | undefined): Promise<number> {
     console.log(`Removed ${SERVICE_LABEL}.`);
     return 0;
   }
-  const running = await serviceStatus(serviceConfig);
+  const running = (await platform.service.status(serviceConfig)).running;
   console.log(running ? `Bridge service is running (${SERVICE_LABEL}).` : `Bridge service is not running (${SERVICE_LABEL}).`);
   return running ? 0 : 1;
 }

@@ -1,8 +1,6 @@
-import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { urlsForPort } from "./net.js";
 
-export type CommandRunner = (command: string, args: string[]) => string;
 export type InterfaceMap = NonNullable<Parameters<typeof urlsForPort>[2]>;
 export type QrHost = "ip" | "local";
 
@@ -21,21 +19,6 @@ export type PairingLinks = {
 };
 
 export type Asker = (question: string) => Promise<string>;
-
-function runCommand(command: string, args: string[]): string {
-  return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-}
-
-/** macOS Bonjour host name, normalized to end in `.local`; null when scutil fails. */
-export function localHostname(run: CommandRunner = runCommand): string | null {
-  try {
-    const name = run("scutil", ["--get", "LocalHostName"]).trim();
-    if (!name) return null;
-    return name.endsWith(".local") ? name : `${name}.local`;
-  } catch {
-    return null;
-  }
-}
 
 function pairingUrl(hostname: string, port: number, token: string): string {
   return `http://${hostname}:${port}/?token=${encodeURIComponent(token)}`;

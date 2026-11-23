@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SERVICE_LABEL,
+  createDarwinService,
   installService,
   servicePath,
   servicePlist,
@@ -11,7 +12,7 @@ import {
   uninstallService,
   type LaunchctlRunner,
   type ServiceConfig,
-} from "../src/service.js";
+} from "../src/platform/darwin/service.js";
 
 type RunnerCall = string[];
 
@@ -43,6 +44,7 @@ function setupConfig(overrides: Partial<ServiceConfig> = {}): ServiceConfig {
     home,
     nodePath: "/usr/local/bin/node",
     cliPath,
+    port: 7788,
     plistPath: join(home, "Library", "LaunchAgents", `${SERVICE_LABEL}.plist`),
     ...overrides,
   };
@@ -66,6 +68,7 @@ describe("servicePlist", () => {
       home: "/Users/fold pet/home",
       nodePath: "/usr/local/bin/node",
       cliPath: "/Users/fold pet/app/dist/cli.js",
+      port: 7788,
     };
     const plist = servicePlist(cfg);
     expect(plist).toContain('<?xml version="1.0" encoding="UTF-8"?>');
@@ -85,6 +88,7 @@ describe("servicePlist", () => {
       home: '/tmp/a&b/<home> "quoted"',
       nodePath: "/opt/node&co/node",
       cliPath: "/opt/cli's/<app>/dist/cli.js",
+      port: 7788,
       plistPath: "/tmp/ignored.plist",
     };
     const plist = servicePlist(cfg);
@@ -201,5 +205,43 @@ describe("serviceStatus", () => {
       throw new Error("launchctl missing");
     };
     expect(await serviceStatus(cfg, runner)).toBe(false);
+  });
+});
+
+describe("darwinService", () => {
+  it("reports installed but stopped when the plist exists without a loaded job", async () => {
+    const cfg = setupConfig();
+    mkdirSync(dirname(cfg.plistPath as string), { recursive: true });
+    writeFileSync(cfg.plistPath as string, servicePlist(cfg));
+    const { calls, runner } = fakeRunner([1]);
+    await expect(createDarwinService(runner).status(cfg)).resolves.toEqual({ installed: true, running: false });
+    expect(calls).toEqual([["print", labelTarget]]);
+  });
+
+  it("reports running and installed when launchctl print succeeds", async () => {
+    const cfg = setupConfig();
+    const { runner } = fakeRunner([0]);
+    await expect(createDarwinService(runner).status(cfg)).resolves.toEqual({ installed: true, running: true });
+  });
+
+  it("reports not installed when there is no job and no plist", async () => {
+    const cfg = setupConfig();
+    const { runner } = fakeRunner([113]);
+    await expect(createDarwinService(runner).status(cfg)).resolves.toEqual({ installed: false, running: false });
+  });
+
+  it("routes install and uninstall through the injected runner", async () => {
+    const cfg = setupConfig();
+    const { calls, runner } = fakeRunner([1, 0, 0]);
+    const service = createDarwinService(runner);
+    await service.install(cfg);
+    expect(existsSync(cfg.plistPath as string)).toBe(true);
+    await service.uninstall(cfg);
+    expect(existsSync(cfg.plistPath as string)).toBe(false);
+    expect(calls).toEqual([
+      ["bootout", labelTarget],
+      ["bootstrap", `gui/${uid}`, cfg.plistPath],
+      ["bootout", labelTarget],
+    ]);
   });
 });
