@@ -1,7 +1,8 @@
 /**
- * Windows adapters. The ACL/private-path adapter is complete; the full Windows
- * platform (Task Scheduler service and host identity) is composed in a later
- * task, so `platformFor("win32")` still returns the unsupported adapter.
+ * Windows adapters. The ACL/private-path and hostname adapters are in place;
+ * the mDNS advertisement, firewall, and Task Scheduler service arrive in later
+ * tasks, so `platformFor("win32")` still returns the unsupported adapter.
  */
+export { sanitizeHostname, windowsHost } from "./hostname.js";
 export { currentUserSid, windowsSecurity, WindowsSecurityError } from "./security.js";
 export type { WindowsSecurityOperation } from "./security.js";

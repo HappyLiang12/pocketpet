@@ -17,4 +17,11 @@ describe("platform selection", () => {
     await expect(platform.service.status({ home: "/tmp/pocketpet-test", nodePath: process.execPath, cliPath: "/tmp/cli.js", port: 7788 }))
       .rejects.toThrow(/not supported/i);
   });
+
+  it("keeps Windows on the unsupported adapter until the full platform exists", async () => {
+    const platform = platformFor("win32");
+    expect(platform.service.label).toBe("PocketPet bridge");
+    expect(platform.host.localHostname()).toBeNull();
+    await expect(platform.host.startAdvertisement()).resolves.toBe(false);
+  });
 });
