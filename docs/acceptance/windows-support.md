@@ -294,16 +294,18 @@ Record exact counts and the run URL in the sign-off block when executed. The las
 
 **Evidence:**
 
-Observed on the available Windows 10 desktop at commit `8de5513` on 2026-11-24. This is compatibility-only evidence and does not promote Windows 10 or any official gate.
+Observed on the available Windows 10 desktop on 2026-11-24 across commits `8de5513`, `686bcb4`, and `86cb6e0`. This is compatibility-only evidence and does not promote Windows 10 or any official gate.
 
-- Environment: Windows 10 Enterprise 22H2, 10.0.19045, x64; Windows PowerShell 5.1.19041.6456; Node v24.14.1; account non-admin (`Elevated=False`); network profile `UberFi_5G` = Public. The real `%USERPROFILE%\.pocketpet` was absent before and after; the test used a temporary home.
-- Bridge: a fresh temporary home was started twice with `node dist/cli.js up --no-hooks --no-service --no-open`. Both runs stayed alive and answered `/health` 200 with `localHostname: null`; no `SeSecurityPrivilege`/`could not protect` error. This is the repeated-start path that failed before the ACL idempotence fix.
+- Environment: Windows 10 Enterprise 22H2, 10.0.19045, x64; Windows PowerShell 5.1.19041.6456; Node v24.14.1; account non-admin (`Elevated=False`). The initial bridge/ACL run used a temporary home with network Public; the later service run used the real `%USERPROFILE%\.pocketpet` and the user approved changing `UberFi_5G` to Private.
+- Repeated-start bridge: a fresh temporary home was started twice with `node dist/cli.js up --no-hooks --no-service --no-open`. Both runs stayed alive and answered `/health` 200 with `localHostname: null`; no `SeSecurityPrivilege`/`could not protect` error. This is the repeated-start path that failed before the ACL idempotence fix.
 - ACL: home `(OI)(CI)(F)`, config `(F)`, and logs `(OI)(CI)(F)` each showed one non-inherited ACE for `HAPPY\<user>`; no `.tmp` files remained. Probe `config ACL` = PASS.
-- Probe summary: `PASS 3 / FAIL 2 / NOT RUN 2`.
-  - PASS: `node` (v24.14.1, minimum v20.6.0), `config ACL`, `loopback health` (200 without a token).
-  - FAIL: `scheduled task` and `firewall`; neither was installed because the account is non-admin and the service/UAC gate was not run.
-  - NOT RUN: `host` (Windows 10 is compatibility-only) and `mdns .local` (`localHostname` was null; the system-resolver answer `happy.local` was explicitly not attributed to the bridge).
-- Not run: service install/uninstall, Task Scheduler logon, UAC, Private-profile firewall rules, phone IP/`.local` reachability, Qoder real-app hook, official Windows 11 x64 gate, and the Windows CI matrix. The non-admin account and Public network remain explicit blockers.
+- Service and network: after the PS 5.1 task-probe fix in `686bcb4`, `node dist/cli.js service install` was run from the normal `HAPPY\User` shell and exited 0 after one product UAC. The task was Running with `Principal.UserId=User` and the exported XML SID matched the current `HAPPY\User` SID; RunLevel Limited, LogonType Interactive. The bridge answered `/health` 200 with `localHostname: happy.local`.
+- Firewall: `Get-NetFirewallRule` returned no rule content for the non-admin token, so the probe reported `firewall` = NOT RUN with both names in `netshOnly`, not a false FAIL. Read-only `netsh` content showed TCP 7788 and UDP 5353 both Enabled/Inbound/Allow/Private, scoped to `C:\Program Files\nodejs\node.exe`.
+- Phone: established non-loopback connections from `192.168.0.105` to `192.168.0.101:7788` were observed. The phone page's clock/pet visual confirmation and whether it used IP or `.local` are still pending; `/health` `sessions` counts agent sessions, not phone clients.
+- Probe at `86cb6e0`: summary `PASS 4 / FAIL 0 / NOT RUN 3`.
+  - PASS: `node` (v24.14.1, minimum v20.6.0), `config ACL`, `scheduled task` (Running), `loopback health` (200 without a token).
+  - NOT RUN: `host` (Windows 10 is compatibility-only), `firewall` (non-admin NetSecurity content unreadable; netsh shows both), and `mdns .local` (bridge advertises `happy.local`, but no direct multicast answer; no attribution from the system resolver).
+- Not run: uninstall/reinstall, Task Scheduler logon persistence after sign-out/reboot, phone visual/`.local` confirmation, Qoder real-app hook, official Windows 11 x64 gate, and the Windows CI matrix. This is not a PASS for Gate 11 or any official gate.
 
 ### 12. Linux and Windows on ARM
 
