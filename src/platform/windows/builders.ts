@@ -40,6 +40,9 @@ export function windowsLauncher(cfg: ServiceConfig): string {
  */
 export function windowsTaskXml(cfg: ServiceConfig, sid: string): string {
   const launcherPath = win32.join(cfg.home, "bridge-service.cmd");
+  // cmd.exe /d /s /c strips the outer quote pair; the inner pair keeps a
+  // launcher path with spaces as a single argument.
+  const actionArguments = `/d /s /c ""${launcherPath}""`;
   return `<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -73,7 +76,7 @@ export function windowsTaskXml(cfg: ServiceConfig, sid: string): string {
   <Actions Context="Author">
     <Exec>
       <Command>cmd.exe</Command>
-      <Arguments>${xmlEscape(`/d /s /c "${launcherPath}"`)}</Arguments>
+      <Arguments>${xmlEscape(actionArguments)}</Arguments>
       <WorkingDirectory>${xmlEscape(cfg.home)}</WorkingDirectory>
     </Exec>
   </Actions>

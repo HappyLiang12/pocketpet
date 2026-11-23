@@ -146,12 +146,23 @@ describe("Windows Task Scheduler XML", () => {
     const xml = windowsTaskXml(cfg, SID);
 
     expect(xml).toContain("<Command>cmd.exe</Command>");
-    expect(xml).toContain(`<Arguments>/d /s /c &quot;${launcherPath}&quot;</Arguments>`);
+    expect(xml).toContain(`<Arguments>/d /s /c &quot;&quot;${launcherPath}&quot;&quot;</Arguments>`);
     expect(xml).toContain(`<WorkingDirectory>${cfg.home}</WorkingDirectory>`);
     expect(xml).toContain("bridge-service.cmd");
     expect(xml).toContain("PocketPet Bridge");
     // InteractiveToken is a logon type, not a credential.
     expect(xml).not.toMatch(/token=|pairing|\/setup|\?t=/i);
+  });
+
+  it("keeps a home path with spaces quoted through the /s quote stripping", () => {
+    const spacedHome = "C:\\Users\\Happy Liang\\.pocketpet";
+    const xml = windowsTaskXml({ ...cfg, home: spacedHome }, SID);
+
+    // /s strips the outer pair, so the inner pair must survive to keep the
+    // spaced launcher path a single argument for cmd.exe.
+    expect(xml).toContain(
+      `<Arguments>/d /s /c &quot;&quot;${spacedHome}\\bridge-service.cmd&quot;&quot;</Arguments>`,
+    );
   });
 
   it("XML-escapes the SID, home, and launcher path", () => {
