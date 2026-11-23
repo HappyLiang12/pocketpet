@@ -48,6 +48,20 @@ describe("Windows private paths", () => {
     expect(script).toContain("AreAccessRulesProtected");
     // Administrators and SYSTEM may take ownership but are never granted by default.
     expect(script).not.toMatch(/S-1-5-32|Administrators|SYSTEM/);
+    // A standard user cannot apply Set-Acl twice to an already-protected DACL
+    // (SeSecurityPrivilege), so an exact current-user-only ACL must exit 0
+    // before any mutation. Files require no inheritance (mask 0).
+    const earlyExit = script.indexOf("exit 0");
+    expect(earlyExit).toBeGreaterThan(-1);
+    expect(earlyExit).toBeLessThan(script.indexOf("SetAccessRuleProtection"));
+    const gate = script.slice(0, earlyExit);
+    expect(gate).toContain("$requiredInheritance=0");
+    expect(gate).toContain("AreAccessRulesProtected");
+    expect(gate).toContain("$acl.Access.Count -eq 1");
+    expect(gate).toContain("AccessControlType -eq 'Allow'");
+    expect(gate).toContain("FullControl");
+    expect(gate).toContain("IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid");
+    expect(gate).toContain("[int]$r.InheritanceFlags -eq $requiredInheritance");
   });
 
   it("builds the ACE from a SecurityIdentifier object, never the SID string", () => {
@@ -68,12 +82,20 @@ describe("Windows private paths", () => {
     const homeScript = decode(recorder.calls.at(-1) as PowerShellCall);
     expect(homeScript).toContain("ContainerInherit,ObjectInherit");
     expect(homeScript).toContain(home);
+    // Directories require exactly ContainerInherit|ObjectInherit (mask 3) for
+    // the idempotence gate, so a repeat protection stays a read-only no-op.
+    expect(homeScript).toContain("$requiredInheritance=3");
+    const homeEarlyExit = homeScript.indexOf("exit 0");
+    expect(homeEarlyExit).toBeGreaterThan(-1);
+    expect(homeEarlyExit).toBeLessThan(homeScript.indexOf("SetAccessRuleProtection"));
 
     const logsRecorder = sidRunner();
     windowsSecurity.protectLogs(home, logsRecorder.run);
     const logsScript = decode(logsRecorder.calls.at(-1) as PowerShellCall);
     expect(logsScript).toContain("ContainerInherit,ObjectInherit");
     expect(logsScript).toContain("logs");
+    expect(logsScript).toContain("$requiredInheritance=3");
+    expect(logsScript.indexOf("exit 0")).toBeLessThan(logsScript.indexOf("SetAccessRuleProtection"));
   });
 
   it("escapes single quotes in the protected path", () => {
