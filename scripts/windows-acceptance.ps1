@@ -22,12 +22,15 @@ Defaults to the live localHostname from /health, then the sanitized
 COMPUTERNAME.
 
 .PARAMETER NodePath
-Optional node.exe path to compare with the firewall program scope.
+Optional node.exe path recorded by the installed launcher and firewall
+rules (not the scheduled task action, which runs powershell.exe).
 Defaults to node.exe on PATH.
 
 .PARAMETER HomePath
 Optional PocketPet home directory. Defaults to POCKETPET_HOME, then
 %USERPROFILE%\.pocketpet. Only the path and its ACL are read.
+
+Exits 1 when any gate is FAIL and 0 otherwise; NOT RUN alone exits 0.
 
 .EXAMPLE
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows-acceptance.ps1 -Port 7788
@@ -101,7 +104,9 @@ if ($arch -eq 'X64') { $arch = 'AMD64' }
 
 $hostInfo = [ordered]@{
   os = $osName
-  caption = (Hide-Text $osCaption)
+  # Registry ProductName is kept for diagnostics only; Windows 11 can still
+  # report "Windows 10 ..." here. Judge the host by the build number above.
+  registryProductName = (Hide-Text $osCaption)
   displayVersion = $osDisplayVersion
   version = $osVersion
   build = $osBuild
@@ -297,7 +302,9 @@ if (-not $homeDir) {
 $gates.Add((New-Gate 'config ACL' $configGate $configDetail))
 
 # ---------------------------------------------------------------------------
-# Scheduled task: locale-independent State via Get-ScheduledTask.
+# Scheduled task: locale-independent State via Get-ScheduledTask. This is the
+# same signal as `service status`; Get-ScheduledTaskInfo last result/run time
+# is probe/diagnostic evidence only, not part of the product status.
 # ---------------------------------------------------------------------------
 $serviceInfo = [ordered]@{
   task = 'PocketPet Bridge'
@@ -389,8 +396,14 @@ if (Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue) {
       if (@($portFilter.LocalPort) -notcontains $expected.LocalPort) {
         $issues.Add("$($expected.Name) has local port '$localPort'") | Out-Null
       }
-      if ($nodeExe -and $program -ne $nodeExe) {
-        $issues.Add("$($expected.Name) is scoped to a different program") | Out-Null
+      if (-not $program -or $program -eq 'Any') {
+        $issues.Add("$($expected.Name) has no program scope") | Out-Null
+      } elseif ($nodeExe) {
+        if ($program -ne $nodeExe) {
+          $issues.Add("$($expected.Name) is scoped to a different program") | Out-Null
+        }
+      } else {
+        $issues.Add("$($expected.Name) program scope could not be compared because node.exe was not resolved; pass -NodePath") | Out-Null
       }
     }
     $firewallInfo.rules = @($ruleInfo)
@@ -654,3 +667,8 @@ $result = [ordered]@{
 }
 
 $result | ConvertTo-Json -Depth 8
+
+# A FAIL is actionable evidence and must be visible to scripts. NOT RUN alone
+# is a normal pre-install state and keeps exit 0.
+if ($summary['FAIL'] -gt 0) { exit 1 }
+exit 0

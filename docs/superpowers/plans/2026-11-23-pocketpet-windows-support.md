@@ -30,7 +30,7 @@
 
 - **Launcher:** the generated launcher is `<home>\bridge-service.ps1`, written as UTF-8 with a BOM. The Task Scheduler action is `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "<home>\bridge-service.ps1"`. There is no `bridge-service.cmd`, no `cmd.exe` action, and no `/d /s /c`; the `.cmd` form corrupts Unicode paths and `%` sequences through the OEM code page.
 - **Task XML bytes:** `windowsTaskXmlBytes()` writes UTF-16LE with a BOM (`FF FE`) before `schtasks /Create /XML`. A BOM-less UTF-16 file is rejected or mis-read; the JS string returned by `windowsTaskXml()` is not itself the registered file.
-- **Service status:** the primary, locale-independent source is `Get-ScheduledTask -TaskName "PocketPet Bridge"` piped to `Select-Object -ExpandProperty State`, plus `Get-ScheduledTaskInfo` for the last result. English `schtasks /Query` parsing (`serviceStatusFromQuery`) is fallback only, because `schtasks` labels are localized.
+- **Service status:** the primary, locale-independent source is `Get-ScheduledTask -TaskName "PocketPet Bridge"` piped to `Select-Object -ExpandProperty State`. `Get-ScheduledTaskInfo` last result/run time is probe/diagnostic evidence only, not a product status input. English `schtasks /Query` parsing (`serviceStatusFromQuery`) is fallback only, because `schtasks` labels are localized.
 - **ACL:** the generated script builds `$sidObj = New-Object System.Security.Principal.SecurityIdentifier($sid)` and passes `$sidObj` to `FileSystemAccessRule`. Passing the SID string directly would be treated as an `NTAccount` name and fail to translate. The script also verifies one protected allow FullControl ACE for that SID.
 - **Install transaction:** validate the compiled CLI, Node path, port, and SID; protect logs; write and protect a staged launcher; run one elevated helper that ends any previous task, deletes stale rules, adds the current Private-profile rules, and registers the task with `/Create /XML /F`; only after elevation succeeds rename the staged launcher over the old one, protect it, and start the task. A canceled or failed elevation keeps the previous launcher and task, and a failed upgrade restores the previous task.
 - **Hooks:** the Windows hook command is the absolute, double-quoted `"<node>" "<cli>" hook claude|qoder`, and stale bare entries are upgraded. The Qoder real-app gate remains `NOT RUN`.
@@ -1018,16 +1018,16 @@ git commit -m "ci: add Windows coverage and integration smoke"
 - [ ] **Step 1: Write the probe**
 
 `scripts/windows-acceptance.ps1` must only read:
-- Windows version and architecture,
+- Windows version and architecture; the build number decides Windows 10/11 because the registry `ProductName` can still say "Windows 10" on Windows 11,
 - Node version,
 - config path existence and `icacls` ACL entries (no file contents),
-- `schtasks /Query` for `PocketPet Bridge`,
-- `netsh advfirewall firewall show rule` for both rule names,
+- `Get-ScheduledTask -TaskName "PocketPet Bridge"` for the locale-independent State; `Get-ScheduledTaskInfo` last result/run time is probe diagnostics only, and `schtasks /Query` is a manual fallback,
+- `Get-NetFirewallRule -DisplayName` with `Get-NetFirewallPortFilter`/`Get-NetFirewallApplicationFilter` for both rules (enabled, direction, action, profile, protocol, local port, program),
 - `Invoke-WebRequest http://127.0.0.1:<port>/health` (no token),
-- `Resolve-DnsName <hostname>.local` if available; otherwise report `NOT RUN` for local resolution,
-- a final JSON/markdown summary with `PASS`, `FAIL`, `NOT RUN`.
+- a direct multicast DNS A query for `<hostname>.local`, with `Resolve-DnsName` as an indicative fallback; report `NOT RUN` only when the query cannot run,
+- a final JSON summary with `PASS`, `FAIL`, `NOT RUN`, and a process exit code of 1 when any gate is `FAIL`.
 
-It must never print config content or the token.
+It must never print config content or the token. This method list was corrected after implementation: the shipped probe uses the cmdlets above, not `schtasks /Query` or `netsh advfirewall firewall show rule`.
 
 - [ ] **Step 2: Update README and security docs**
 

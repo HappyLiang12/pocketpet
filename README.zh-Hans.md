@@ -37,7 +37,7 @@ PocketPet 支持 macOS 与 Windows 11 x64。Bridge、手机页面、Studio 与 t
 | 主机 | 支持 | Bridge、手机页面、Studio | Agent hooks | 登录服务 | `.local` | 配置保护 |
 | --- | --- | --- | --- | --- | --- | --- |
 | macOS（当前） | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | launchd LaunchAgent | 系统 Bonjour 与 `scutil` | 目录 0700、文件 0600 |
-| Windows 11 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；仅在 PocketPet 防火墙规则存在时启动 | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
+| Windows 11 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
 | Windows 10 22H2 x64 | 仅兼容性；尽力支持，非官方支持（验收 NOT RUN） | 预期可用 | 预期可用 | 预期可用 | 预期可用 | 预期可用 |
 | Windows on ARM | 未声明 | 未测试 | 未测试 | 未测试 | 未测试 | 未测试 |
 | Linux | 尽力支持 | 仅 bridge | 未测试 | 无 | 无 | 仅 POSIX mode bits；无 ACL 承诺 |
@@ -71,11 +71,11 @@ pocketpet up
 
 - **每次服务操作一次 UAC。** 接受 `Start bridge at login?` 后会安装当前用户的 `PocketPet Bridge` 登录任务，添加仅限 Private 的入站防火墙规则（TCP `<port>` 与 UDP 5353，作用域为当前 `node.exe`），并启动 bridge。重启或注销再登录后无需 UAC 即可自动启动。`pocketpet service install` 与 `pocketpet service uninstall` 也各需要一次 UAC。
 - **UAC 取消或注册失败。** `pocketpet up` 会打印可粘贴到管理员 PowerShell 的完整重试命令，继续在前台运行，并且不会声称服务已在运行。单独运行 `pocketpet service install` 会以退出码 1 结束。
-- **`--no-service`。** 跳过服务与 UAC，也不会添加防火墙规则；若此前安装服务留下的 PocketPet 规则仍存在，`.local` 仍可能广播；否则请使用 IP 或 USB 地址。
+- **`--no-service`。** 跳过服务与 UAC，也不会添加防火墙规则；若此前安装服务留下的 PocketPet 规则在 bridge 启动时仍存在，`.local` 仍可能广播；否则请使用 IP 或 USB 地址。
 - **Launcher 与日志。** 服务运行生成的 `%USERPROFILE%\.pocketpet\bridge-service.ps1`（PowerShell，UTF-8 带 BOM），日志追加到 `%USERPROFILE%\.pocketpet\logs\bridge.log`。任务 XML、launcher 与日志都不含 token、QR 或配对网址。设置 `POCKETPET_HOME` 可改变默认目录。
 - **状态。** `pocketpet service status` 只在任务运行时以 0 退出；停止或缺失时以 1 退出。设置页 System 区域显示同一状态。
 - **防火墙。** 规则为入站允许、仅 Private。Public 与 Domain 网络不会自动开放，因此手机访问与 `.local` 可能失败，`doctor` 会说明原因；增删规则需要服务安装时的同一次提权。
-- **`.local`。** 仅当 PocketPet 防火墙规则存在且存在非 loopback IPv4 地址时，mDNS responder 才广播 `<computer-name>.local`。名称会转为小写并规范为 `[a-z0-9-]`；重名不会自动改名。网络前提与 IP/USB 回退见下方「`.local` 地址与登录服务」。
+- **`.local`。** 仅当 bridge 启动时两条 PocketPet 防火墙规则都存在且存在非 loopback IPv4 地址，mDNS responder 才广播 `<computer-name>.local`；检查只在启动时进行，之后删除规则不会撤回已在运行的广播，需重启 bridge 才生效。名称会转为小写并规范为 `[a-z0-9-]`；重名不会自动改名。网络前提与 IP/USB 回退见下方「`.local` 地址与登录服务」。
 - **配置保护。** home、`config.json`、logs 与 launcher 默认仅当前用户可访问。管理员可以取得所有权，以 SYSTEM 运行的备份工具可能无法读取；见 [SECURITY.md](SECURITY.md)。
 - **疑难排解。** 见「疑难解答」中的 Windows 条目。真实机器验收模板与只读探测脚本见 `docs/acceptance/windows-support.md` 与 `scripts/windows-acceptance.ps1`。
 
@@ -119,7 +119,7 @@ Agents 和 Updates 卡片、agent 设置与更新界面不在此切片内，属�
 只要主机能广播，`pocketpet up` 会在 IP 网址旁打印 `.local` 名称：
 
 - **macOS** 使用 `scutil --get LocalHostName`（例如 `http://my-computer.local:7788/?token=...`），系统 Bonjour responder 始终可用。
-- **Windows 11** 通过随应用提供的 mDNS responder 广播规范化后的计算机名（例如 `http://my-pc.local:7788/?token=...`）。只有 PocketPet 防火墙规则存在时才会广播，因此请先安装登录服务；没有规则的前台 `run` 不提供 `.local`。iOS 通过 Bonjour 解析，Android 依版本与网络而异。
+- **Windows 11** 通过随应用提供的 mDNS responder 广播规范化后的计算机名（例如 `http://my-pc.local:7788/?token=...`）。bridge 启动时两条 PocketPet 防火墙规则必须都存在，因此请先安装登录服务；没有规则的前台 `run` 不提供 `.local`。该检查只在启动时进行：之后删除规则不会撤回已在应答的广播，需要重启 bridge 才生效。iOS 通过 Bonjour 解析，Android 依版本与网络而异。
 
 `.local` 可承受 DHCP 地址变化，但依赖 multicast DNS：部分 WiFi、访客网络、AP 隔离、VPN 与企业网络会阻挡。重名不会自动改名。QR 默认仍使用 IP；`--qr-host local` 只在名称实际可用时改变终端 QR（`/setup` 页面仍显示 IP QR）。在 Android 与 iPhone 都验证之前，`.local` 不是默认配对方式，请保留 IP 或 USB 回退。Windows 上 `pocketpet doctor` 只在 responder 广播期间显示 `PASS mdns`。
 
@@ -160,7 +160,7 @@ adb reverse tcp:7788 tcp:7788
 
 当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation + Windows 11 x64 支持。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd（macOS）与 Task Scheduler（Windows）登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
 
-Windows 11 x64 是官方 Windows 主机；Windows 10 22H2 仅兼容性，Windows on ARM 与 Linux 仅尽力支持且没有支持承诺。Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。设计见 `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`，真实机器验收见 `docs/acceptance/windows-support.md`。
+Windows 11 x64 是官方 Windows 主机；Windows 10 22H2 仅兼容性，Windows on ARM 未测试且未声明，Linux 仅尽力支持且没有支持承诺。Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。设计见 `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`，真实机器验收见 `docs/acceptance/windows-support.md`。
 
 ## 疑难解答
 
