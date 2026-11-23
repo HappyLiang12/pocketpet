@@ -2,13 +2,11 @@ import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { ServiceConfig as PlatformServiceConfig, ServiceManager } from "../types.js";
 
 export const SERVICE_LABEL = "dev.pocketpet.bridge";
 
-export type ServiceConfig = {
-  home: string;
-  nodePath: string;
-  cliPath: string;
+export type ServiceConfig = PlatformServiceConfig & {
   /** Test hook: overrides the real ~/Library/LaunchAgents location. */
   plistPath?: string;
 };
@@ -132,3 +130,17 @@ export async function serviceStatus(cfg: ServiceConfig, runner: LaunchctlRunner 
     return false;
   }
 }
+
+/** launchd adapter bound to one runner; tests inject a fake and production uses launchctl. */
+export function createDarwinService(runner: LaunchctlRunner = defaultRunner): ServiceManager {
+  return {
+    install: (cfg) => installService(cfg, runner),
+    uninstall: (cfg) => uninstallService(cfg, runner),
+    status: async (cfg) => {
+      const running = await serviceStatus(cfg, runner);
+      return { installed: running || existsSync(servicePath(cfg.home)), running };
+    },
+  };
+}
+
+export const darwinService: ServiceManager = createDarwinService();

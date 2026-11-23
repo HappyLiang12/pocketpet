@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { askYesNo, localHostname, pairingLinks } from "../src/onboarding.js";
+import { askYesNo, pairingLinks } from "../src/onboarding.js";
+import { localHostname } from "../src/platform/darwin/hostname.js";
 
 const fakeIfaces = {
   en0: [{ address: "192.168.1.5", family: "IPv4", internal: false, netmask: "255.255.255.0", mac: "aa", cidr: null }],
