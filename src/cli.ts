@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import type { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import qrcode from "qrcode-terminal";
-import { configPath, ensureConfig, pocketpetHome, loadConfig, type Config } from "./config.js";
+import { configPath, ensureConfig, hardenConfig, pocketpetHome, loadConfig, type Config } from "./config.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND, installClaudeHooks } from "./adapters/claudeInstall.js";
 import { mapClaudeHook } from "./adapters/claudeHook.js";
 import { installQoderHooks, qoderHookEventStatus, qoderSettingsPaths } from "./adapters/qoderInstall.js";
@@ -541,22 +541,22 @@ async function runService(action: string | undefined): Promise<number> {
 async function runServer(args: string[] = []): Promise<number> {
   const serviceMode = args.includes("--service");
   const home = pocketpetHome();
+  const target = configPath(home);
+  const created = !existsSync(target);
   let config: Config;
   try {
-    config = loadConfig(home);
+    // Startup hardening: protect an existing config before reading it; the hook
+    // path uses the pure loadConfig instead.
+    config = created ? ensureConfig(home) : hardenConfig(home);
   } catch {
-    try {
-      config = ensureConfig(home);
-    } catch {
-      // Never print the error: it may quote the malformed config, including the token.
-      console.error(`config unreadable: ${configPath(home)}`);
-      console.error("Fix or delete the file, then run `pocketpet init` again.");
-      return 1;
-    }
-    if (!serviceMode) {
-      console.log(`Created config: ${configPath(home)}`);
-      console.log("Claude Code hooks are not installed yet; run `pocketpet init` to add them.");
-    }
+    // Never print the error: it may quote the malformed config, including the token.
+    console.error(`config unreadable: ${target}`);
+    console.error("Fix or delete the file, then run `pocketpet init` again.");
+    return 1;
+  }
+  if (created && !serviceMode) {
+    console.log(`Created config: ${target}`);
+    console.log("Claude Code hooks are not installed yet; run `pocketpet init` to add them.");
   }
   const bridge = await startBridge({ home, config, webDist: webDistPath() });
   if (serviceMode) {
