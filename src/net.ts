@@ -6,10 +6,11 @@ export type LanAddress = { address: string; interfaceName: string; rank: number 
 
 /**
  * Windows adapters that are tunnels or software switches; they never identify
- * the LAN. macOS tunnels are covered by the `utun` rule instead.
+ * the LAN. `utun` is included so macOS-shaped fixtures and tunnel adapters stay
+ * demoted when the bridge runs on Windows.
  */
 const WINDOWS_VIRTUAL_ADAPTER =
-  /vethernet|vpn|tailscale|wireguard|zerotier|virtual|hyper-v|vmware|virtualbox|docker|(^|[\s(])tap\d/i;
+  /vethernet|vpn|tailscale|wireguard|zerotier|virtual|hyper-v|vmware|virtualbox|docker|utun|(^|[\s(])tap\d/i;
 
 /** Windows Wi-Fi and wired adapters that a phone on the same LAN can reach. */
 const WINDOWS_PRIMARY_ADAPTER = /^(wi-?fi|wireless|wlan|ethernet)([\s\d*()]|$)/i;
