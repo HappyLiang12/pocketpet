@@ -3,7 +3,9 @@ import { join } from "node:path";
 import type { CommandRunner, PrivatePaths } from "../types.js";
 
 const POWERSHELL = "powershell.exe";
-const SID_SCRIPT = "([WindowsIdentity]::GetCurrent()).User.Value";
+// Windows PowerShell 5.1 does not resolve the bare `[WindowsIdentity]` name;
+// the fully qualified .NET type resolves on every supported PowerShell host.
+const SID_SCRIPT = "([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value";
 const SID_PATTERN = /^S-1-5-\d+(-\d+)+$/;
 
 export type WindowsSecurityOperation = "resolve-sid" | "protect";

@@ -3,6 +3,9 @@ import type { CommandResult, CommandRunner } from "../src/platform/types.js";
 import { currentUserSid, WindowsSecurityError, windowsSecurity } from "../src/platform/windows/security.js";
 
 const SID = "S-1-5-21-42";
+// Windows PowerShell 5.1 cannot resolve the bare `[WindowsIdentity]` accelerator
+// for this type; only the fully qualified name works on every supported host.
+const SID_SCRIPT = "([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value";
 
 type PowerShellCall = { command: string; args: string[] };
 
@@ -30,7 +33,8 @@ describe("Windows private paths", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0].args[2]).toBe("-Command");
-    expect(calls[0].args[3]).toBe("([WindowsIdentity]::GetCurrent()).User.Value");
+    expect(calls[0].args[3]).toBe(SID_SCRIPT);
+    expect(calls[0].args[3]).not.toContain("([WindowsIdentity]");
     const script = decode(calls[1]);
     expect(script).toContain("SetAccessRuleProtection($true,$false)");
     expect(script).toContain(SID);
@@ -85,6 +89,9 @@ describe("Windows private paths", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe("powershell.exe");
     expect(calls[0].args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
+    // The SID probe must use the fully qualified .NET type on PowerShell 5.1.
+    expect(calls[0].args[3]).toBe(SID_SCRIPT);
+    expect(calls[0].args[3]).not.toContain("([WindowsIdentity]");
   });
 
   it("throws a typed error when the SID cannot be resolved, before touching any ACL", () => {
