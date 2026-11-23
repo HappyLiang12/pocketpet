@@ -6,6 +6,7 @@ import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { configPath, ensureConfig, hardenConfig, loadConfig, saveConfig } from "../src/config.js";
 import { platform } from "../src/platform/index.js";
 import type { PrivatePaths } from "../src/platform/types.js";
+import { testSecurity } from "./helpers/test-platform.js";
 
 type SecurityRecorder = PrivatePaths & { calls: string[] };
 
@@ -39,7 +40,7 @@ afterEach(() => {
 describe("config store", () => {
   it("creates a config with a long random token and dirs", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     expect(config.token.length).toBeGreaterThanOrEqual(32);
     expect(config.port).toBe(7788);
     expect(config.activePet).toBeNull();
@@ -54,26 +55,26 @@ describe("config store", () => {
 
   it("writes config.json with owner-only permissions and no temp file", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    ensureConfig(home);
+    ensureConfig(home, process.env, testSecurity);
     if (process.platform !== "win32") expect(statSync(configPath(home)).mode & 0o777).toBe(0o600);
     expect(existsSync(`${configPath(home)}.tmp`)).toBe(false);
-    saveConfig(home, { ...loadConfig(home), activePet: "local:boba" });
+    saveConfig(home, { ...loadConfig(home), activePet: "local:boba" }, testSecurity);
     if (process.platform !== "win32") expect(statSync(configPath(home)).mode & 0o777).toBe(0o600);
     expect(readdirSync(home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("preserves the token across repeated ensureConfig calls", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const first = ensureConfig(home);
-    const second = ensureConfig(home);
+    const first = ensureConfig(home, process.env, testSecurity);
+    const second = ensureConfig(home, process.env, testSecurity);
     expect(second.token).toBe(first.token);
     expect(loadConfig(home).token).toBe(first.token);
   });
 
   it("round-trips saved fields", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const config = ensureConfig(home);
-    saveConfig(home, { ...config, activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
+    const config = ensureConfig(home, process.env, testSecurity);
+    saveConfig(home, { ...config, activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } }, testSecurity);
     expect(loadConfig(home)).toMatchObject({ activePet: "local:boba", quietHours: { start: "23:00", end: "07:00" } });
   });
 
@@ -91,9 +92,9 @@ describe("config store", () => {
 
   it("round-trips a normalized appearance", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const appearance = normalizeAppearance({ ...DEFAULT_APPEARANCE, theme: "light", clock: { scale: 140 } });
-    saveConfig(home, { ...config, appearance });
+    saveConfig(home, { ...config, appearance }, testSecurity);
     expect(loadConfig(home).appearance).toEqual(appearance);
   });
 
@@ -109,7 +110,7 @@ describe("POCKETPET_PORT override on first creation", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     process.env.POCKETPET_PORT = "0";
 
-    expect(ensureConfig(home).port).toBe(0);
+    expect(ensureConfig(home, process.env, testSecurity).port).toBe(0);
     expect(loadConfig(home).port).toBe(0);
   });
 
@@ -117,16 +118,16 @@ describe("POCKETPET_PORT override on first creation", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
     process.env.POCKETPET_PORT = "9099";
 
-    expect(ensureConfig(home).port).toBe(9099);
+    expect(ensureConfig(home, process.env, testSecurity).port).toBe(9099);
   });
 
   it("never overrides a config that already exists", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     expect(created.port).toBe(7788);
     process.env.POCKETPET_PORT = "0";
 
-    expect(ensureConfig(home).port).toBe(7788);
+    expect(ensureConfig(home, process.env, testSecurity).port).toBe(7788);
     expect(loadConfig(home).port).toBe(7788);
   });
 
@@ -135,7 +136,7 @@ describe("POCKETPET_PORT override on first creation", () => {
     for (const value of ["abc", "-1", "65536", "70000", "", "12.5"]) {
       rmSync(configPath(home), { force: true });
       process.env.POCKETPET_PORT = value;
-      expect(ensureConfig(home).port, `value: ${JSON.stringify(value)}`).toBe(7788);
+      expect(ensureConfig(home, process.env, testSecurity).port, `value: ${JSON.stringify(value)}`).toBe(7788);
     }
   });
 });
@@ -176,7 +177,7 @@ describe("config protection", () => {
 
   it("keeps a pre-existing config when post-rename verification fails", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     const target = configPath(home);
     // Temp-file protection passes; only the post-rename verification fails.
     const security = fakeSecurity({
@@ -194,7 +195,7 @@ describe("config protection", () => {
 
   it("never invokes platform protection on a pure load (hook read path)", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     const protectHome = vi.spyOn(platform.security, "protectHome");
     const protectLogs = vi.spyOn(platform.security, "protectLogs");
     const protectFile = vi.spyOn(platform.security, "protectFile");
@@ -211,7 +212,7 @@ describe("config protection", () => {
 
   it("hardenConfig protects home, logs and the config without changing the token", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     const recorder = fakeSecurity();
 
     expect(hardenConfig(home, recorder).token).toBe(created.token);
@@ -220,7 +221,7 @@ describe("config protection", () => {
 
   it("hardenConfig refuses an existing config it cannot protect", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
 
     const refusals = fakeSecurity({ protectFile: () => { throw new Error("ACL apply failed"); } });
     expect(() => hardenConfig(home, refusals)).toThrow(/ACL/);
@@ -230,7 +231,7 @@ describe("config protection", () => {
 
   it("hardens an existing config at startup and preserves its token", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     const recorder = fakeSecurity();
 
     expect(ensureConfig(home, process.env, recorder).token).toBe(created.token);
@@ -258,7 +259,7 @@ describe("config protection", () => {
 
   it("refuses to regenerate an existing config that cannot be protected", () => {
     home = mkdtempSync(join(tmpdir(), "pocketpet-"));
-    const created = ensureConfig(home);
+    const created = ensureConfig(home, process.env, testSecurity);
     const refusals = fakeSecurity({ protectFile: () => { throw new Error("ACL apply failed"); } });
 
     expect(() => ensureConfig(home, process.env, refusals)).toThrow(/ACL/);

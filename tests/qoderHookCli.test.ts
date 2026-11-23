@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Snapshot } from "../src/aggregator.js";
 import { ensureConfig, saveConfig } from "../src/config.js";
 import { startBridge, type Bridge } from "../src/server.js";
+import { testHost, testSecurity } from "./helpers/test-platform.js";
 
 let home = "";
 let bridge: Bridge;
@@ -14,9 +15,9 @@ beforeEach(async () => {
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "ok");
-  const config = ensureConfig(home);
-  bridge = await startBridge({ home, config, webDist, port: 0, localPetDirs: [join(home, "pets")], fetchImpl: async () => { throw new Error("offline"); } });
-  saveConfig(home, { ...config, port: bridge.port });
+  const config = ensureConfig(home, process.env, testSecurity);
+  bridge = await startBridge({ home, config, webDist, port: 0, localPetDirs: [join(home, "pets")], host: testHost, fetchImpl: async () => { throw new Error("offline"); } });
+  saveConfig(home, { ...config, port: bridge.port }, testSecurity);
 });
 afterEach(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
 

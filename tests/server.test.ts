@@ -9,6 +9,7 @@ import { ensureConfig } from "../src/config.js";
 import { urlsForPort } from "../src/net.js";
 import type { HostIdentity } from "../src/platform/types.js";
 import { startBridge, setupServiceRunning, type Bridge } from "../src/server.js";
+import { testHost, testSecurity } from "./helpers/test-platform.js";
 
 let home = "";
 let bridge: Bridge;
@@ -26,9 +27,9 @@ beforeEach(async () => {
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "<html>ok</html>");
-  const config = ensureConfig(home);
+  const config = ensureConfig(home, process.env, testSecurity);
   bridge = await startBridge({
-    home, config, webDist, port: 0, localPetDirs: [join(home, "pets")],
+    home, config, webDist, port: 0, localPetDirs: [join(home, "pets")], host: testHost,
     fetchImpl: petdexFetch, probeService,
   });
   const res = await fetch(`http://127.0.0.1:${bridge.port}/?token=${encodeURIComponent(config.token)}`);
@@ -535,9 +536,9 @@ describe("bridge server security", () => {
       if (url === "https://petdex.dev/pets/good/pet.json") return new Response('{"displayName":"Good"}', { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const second = await startBridge({
-      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [],
+      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [], host: testHost,
       fetchImpl: fakeFetch,
     });
     try {
@@ -573,9 +574,9 @@ describe("bridge server security", () => {
       if (url === "https://petdex.dev/api/manifest") return new Response(JSON.stringify(manifest), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const second = await startBridge({
-      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [],
+      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [], host: testHost,
       fetchImpl: fakeFetch,
     });
     try {
@@ -601,9 +602,9 @@ describe("bridge server security", () => {
       if (url === "https://petdex.dev/api/manifest") return new Response(JSON.stringify(manifest), { status: 200 });
       throw new Error(`unexpected fetch: ${url}`);
     }) as typeof fetch;
-    const config = ensureConfig(home);
+    const config = ensureConfig(home, process.env, testSecurity);
     const second = await startBridge({
-      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [join(home, "pets")],
+      home, config, webDist: join(home, "web"), port: 0, localPetDirs: [join(home, "pets")], host: testHost,
       fetchImpl: fakeFetch,
     });
     try {
