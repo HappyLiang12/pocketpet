@@ -6,7 +6,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { liveLocalHostnameUntil, main, hasPocketPetHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
+import { liveLocalHostnameUntil, main, hasPocketPetHooks, hasQoderHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { configPath, ensureConfig, saveConfig } from "../src/config.js";
@@ -172,17 +172,23 @@ describe("hasPocketPetHooks", () => {
     return file;
   }
 
-  it("accepts a command hook for every event", () => {
-    expect(hasPocketPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }))).toBe(true);
+  it("accepts the bare command on macOS", () => {
+    expect(hasPocketPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }), "darwin")).toBe(true);
+  });
+
+  it("rejects the bare command and accepts the quoted absolute command on Windows", () => {
+    const windowsCommand = '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\PocketPet\\dist\\cli.js" hook claude';
+    expect(hasPocketPetHooks(settingsWith({ type: "command", command: HOOK_COMMAND }), "win32")).toBe(false);
+    expect(hasPocketPetHooks(settingsWith({ type: "command", command: windowsCommand }), "win32")).toBe(true);
   });
 
   it("requires hook.type to be command", () => {
-    expect(hasPocketPetHooks(settingsWith({ command: HOOK_COMMAND }))).toBe(false);
-    expect(hasPocketPetHooks(settingsWith({ type: "prompt", command: HOOK_COMMAND }))).toBe(false);
+    expect(hasPocketPetHooks(settingsWith({ command: HOOK_COMMAND }), "darwin")).toBe(false);
+    expect(hasPocketPetHooks(settingsWith({ type: "prompt", command: HOOK_COMMAND }), "darwin")).toBe(false);
   });
 
   it("rejects a missing settings file and a settings file missing one event", () => {
-    expect(hasPocketPetHooks(join(claudeDir, "missing.json"))).toBe(false);
+    expect(hasPocketPetHooks(join(claudeDir, "missing.json"), "darwin")).toBe(false);
 
     const file = join(claudeDir, "settings.json");
     const hooks: Record<string, unknown> = Object.fromEntries(
@@ -190,7 +196,28 @@ describe("hasPocketPetHooks", () => {
     );
     delete hooks[CLAUDE_HOOK_EVENTS.at(-1)!];
     writeFileSync(file, JSON.stringify({ hooks }));
-    expect(hasPocketPetHooks(file)).toBe(false);
+    expect(hasPocketPetHooks(file, "darwin")).toBe(false);
+  });
+});
+
+describe("hasQoderHooks", () => {
+  function qoderSettings(hook: { type: string; command: string }): string {
+    const dir = join(userHome, ".qoder");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "settings.json");
+    const hooks = Object.fromEntries(QODER_HOOK_EVENTS.map((event) => [event, [{ hooks: [hook] }]]));
+    writeFileSync(file, JSON.stringify({ hooks }));
+    return file;
+  }
+
+  it("accepts the bare command on macOS", () => {
+    expect(hasQoderHooks(qoderSettings({ type: "command", command: "pocketpet hook qoder" }), "darwin")).toBe(true);
+  });
+
+  it("treats a bare Windows hook as pending so `up` upgrades it", () => {
+    const windowsCommand = '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\PocketPet\\dist\\cli.js" hook qoder';
+    expect(hasQoderHooks(qoderSettings({ type: "command", command: "pocketpet hook qoder" }), "win32")).toBe(false);
+    expect(hasQoderHooks(qoderSettings({ type: "command", command: windowsCommand }), "win32")).toBe(true);
   });
 });
 
@@ -487,6 +514,39 @@ describe("Windows service CLI fallback", () => {
     }
   });
 
+  it("retries the live gated .local on the already-running fast path on Windows", async () => {
+    let probes = 0;
+    const server = createHttpServer((_req, res) => {
+      probes += 1;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true, sessions: 0, localHostname: probes < 3 ? null : "happy-pc.local" }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (typeof address !== "object" || !address) throw new Error("failed to reserve a port");
+      const token = writeConfig(address.port);
+      const platform = fakePlatform();
+
+      const { result, output } = await capture(() =>
+        runUp(["--no-hooks", "--no-open"], {
+          platform,
+          platformName: "win32",
+          hostnameRetryMs: 1000,
+          waitForInterrupt: async () => {},
+        }),
+      );
+
+      expect(result).toBe(0);
+      expect(output).toContain(`Bridge already running on port ${address.port}.`);
+      expect(output).toContain(`http://happy-pc.local:${address.port}/?token=${token}`);
+      // The already-running bridge must not be installed or restarted.
+      expect(platform.service.install).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("falls back to the IP URL when the live .local never appears", async () => {
     let probes = 0;
     const server = createHttpServer((_req, res) => {
@@ -628,18 +688,24 @@ describe("Windows service CLI fallback", () => {
 });
 
 describe("qoderHookCommand", () => {
-  it("uses the absolute node binary and compiled CLI path", () => {
-    expect(qoderHookCommand("/app/dist/cli.js", "/usr/local/bin/node")).toBe(
+  it("uses the absolute node binary and compiled CLI path on macOS", () => {
+    expect(qoderHookCommand("/app/dist/cli.js", "/usr/local/bin/node", "darwin")).toBe(
       "'/usr/local/bin/node' '/app/dist/cli.js' hook qoder",
     );
   });
 
-  it("falls back to the linked command for a TypeScript entry point", () => {
-    expect(qoderHookCommand("/repo/src/cli.ts", "/usr/local/bin/node")).toBe("pocketpet hook qoder");
+  it("uses the quoted absolute form on Windows", () => {
+    expect(qoderHookCommand("C:\\Program Files\\PocketPet\\dist\\cli.js", "C:\\Program Files\\nodejs\\node.exe", "win32")).toBe(
+      '"C:\\Program Files\\nodejs\\node.exe" "C:\\Program Files\\PocketPet\\dist\\cli.js" hook qoder',
+    );
   });
 
-  it("shell-quotes apostrophes", () => {
-    expect(qoderHookCommand("/tmp/a'b/cli.js", "/tmp/node")).toBe("'/tmp/node' '/tmp/a'\\''b/cli.js' hook qoder");
+  it("falls back to the linked command for a TypeScript entry point", () => {
+    expect(qoderHookCommand("/repo/src/cli.ts", "/usr/local/bin/node", "darwin")).toBe("pocketpet hook qoder");
+  });
+
+  it("shell-quotes apostrophes on macOS", () => {
+    expect(qoderHookCommand("/tmp/a'b/cli.js", "/tmp/node", "darwin")).toBe("'/tmp/node' '/tmp/a'\\''b/cli.js' hook qoder");
   });
 });
 

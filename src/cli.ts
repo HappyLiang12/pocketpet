@@ -177,8 +177,9 @@ function existingQoderSettingsPaths(): string[] {
   return qoderSettingsPaths().filter((settingsPath) => existsSync(dirname(settingsPath)));
 }
 
-function hasQoderHooks(settingsPath: string): boolean {
-  const status = qoderHookEventStatus(settingsPath);
+/** True when every PocketPet Qoder hook event is wired for `platformName`. */
+export function hasQoderHooks(settingsPath: string, platformName: NodeJS.Platform = process.platform): boolean {
+  const status = qoderHookEventStatus(settingsPath, platformName);
   return status !== null && status.missing.length === 0;
 }
 
@@ -219,6 +220,7 @@ function installQoderHooksForInit(): void {
     try {
       const result = installQoderHooks(settingsPath, command);
       console.log(`Qoder hooks (${root}) added: ${result.added.join(", ") || "none"}`);
+      if (result.replaced.length > 0) console.log(`Qoder hooks (${root}) upgraded: ${result.replaced.join(", ")}`);
       console.log(`Qoder hooks (${root}) already present: ${result.already.join(", ") || "none"}`);
     } catch {
       console.error(`Qoder hooks (${root}): could not update settings; continuing.`);
@@ -266,14 +268,14 @@ async function setupClaudeHooks(options: { yes: boolean; noHooks: boolean }): Pr
  * Installs Qoder hooks only into existing roots, with the same consent rules as
  * Claude. A missing root is skipped silently; failures never block the bridge.
  */
-async function setupQoderHooks(options: { yes: boolean; noHooks: boolean }): Promise<void> {
+async function setupQoderHooks(options: { yes: boolean; noHooks: boolean }, platformName: NodeJS.Platform = process.platform): Promise<void> {
   const roots = existingQoderSettingsPaths();
   if (roots.length === 0) return;
   if (options.noHooks) {
     console.log("Qoder hooks: skipped (--no-hooks)");
     return;
   }
-  const pending = roots.filter((settingsPath) => !hasQoderHooks(settingsPath));
+  const pending = roots.filter((settingsPath) => !hasQoderHooks(settingsPath, platformName));
   if (pending.length === 0) {
     console.log("Qoder hooks: already installed");
     return;
@@ -294,8 +296,9 @@ async function setupQoderHooks(options: { yes: boolean; noHooks: boolean }): Pro
   for (const settingsPath of pending) {
     const root = dirname(settingsPath);
     try {
-      const result = installQoderHooks(settingsPath, command);
+      const result = installQoderHooks(settingsPath, command, platformName);
       console.log(`Qoder hooks added (${root}): ${result.added.join(", ") || "none"}`);
+      if (result.replaced.length > 0) console.log(`Qoder hooks upgraded (${root}): ${result.replaced.join(", ")}`);
     } catch {
       console.error(`Qoder hooks (${root}): could not update settings; continuing without Qoder hooks.`);
     }
@@ -541,18 +544,24 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
   console.log(`Config: ${configPath(home)}`);
 
   await setupClaudeHooks({ yes: options.yes, noHooks: options.noHooks });
-  await setupQoderHooks({ yes: options.yes, noHooks: options.noHooks });
+  await setupQoderHooks({ yes: options.yes, noHooks: options.noHooks }, platformName);
   const tty = Boolean(process.stdin.isTTY);
 
   if (await bridgeHealthy(config.port)) {
     console.log(`Bridge already running on port ${config.port}.`);
+    // The already-running bridge may answer `/health` before its advertisement
+    // lands, so Windows gets the same bounded retry as the service branch.
+    const liveHostname =
+      platformName === "win32"
+        ? await liveLocalHostnameUntil(config.port, deps.hostnameRetryMs)
+        : await liveLocalHostname(config.port);
     printPairing({
       port: config.port,
       token: config.token,
       qrHost: options.qrHost,
       open: !options.noOpen,
       keepRunning: true,
-      hostname: (await liveLocalHostname(config.port)) ?? target.host.localHostname(),
+      hostname: liveHostname ?? target.host.localHostname(),
     });
     return 0;
   }
