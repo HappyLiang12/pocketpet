@@ -8,7 +8,7 @@ import { CLAUDE_HOOK_EVENTS, isClaudeHookCommand } from "./adapters/claudeInstal
 import { qoderHookEventStatus, qoderSettingsPaths } from "./adapters/qoderInstall.js";
 import { scanLocalPets } from "./pets.js";
 import type { CommandRunner, ServiceState } from "./platform/types.js";
-import { firewallRulesPresent } from "./platform/windows/firewall.js";
+import { auditFirewallRules, type FirewallAudit } from "./platform/windows/firewall.js";
 import { currentUserSid } from "./platform/windows/security.js";
 import { windowsService } from "./platform/windows/service.js";
 
@@ -20,7 +20,7 @@ export type Check = { name: string; status: "PASS" | "WARN" | "FAIL"; detail: st
  */
 export type WindowsDoctorProbes = {
   service?: () => Promise<ServiceState> | ServiceState;
-  firewall?: () => boolean;
+  firewall?: () => FirewallAudit;
   acl?: () => { ok: boolean; detail: string };
   localHostname?: () => Promise<string | null> | string | null;
 };
@@ -33,6 +33,8 @@ type Options = {
   probePort?: (port: number) => Promise<boolean>;
   /** Test/selection hook: defaults to `process.platform`. */
   platformName?: NodeJS.Platform;
+  /** The running CLI entry point, used for the Windows service status config. */
+  cliPath?: string;
   /** Test hook: replaces the real Windows probes. */
   windows?: WindowsDoctorProbes;
 };
@@ -47,11 +49,11 @@ function probe(port: number): Promise<boolean> {
   });
 }
 
-function claudeHookCheck(settingsPath: string): Check {
+function claudeHookCheck(settingsPath: string, platformName: NodeJS.Platform): Check {
   if (!existsSync(settingsPath)) return { name: "claude hooks", status: "FAIL", detail: `settings not found: ${settingsPath}` };
   try {
     const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as { hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>> };
-    const missing = CLAUDE_HOOK_EVENTS.filter((event) => !(settings.hooks?.[event] ?? []).some((entry) => (entry.hooks ?? []).some((hook) => isClaudeHookCommand(hook.command))));
+    const missing = CLAUDE_HOOK_EVENTS.filter((event) => !(settings.hooks?.[event] ?? []).some((entry) => (entry.hooks ?? []).some((hook) => isClaudeHookCommand(hook.command, platformName))));
     return missing.length === 0 ? { name: "claude hooks", status: "PASS", detail: "all events wired" } : { name: "claude hooks", status: "FAIL", detail: `missing: ${missing.join(", ")}` };
   } catch {
     return { name: "claude hooks", status: "FAIL", detail: "invalid settings JSON" };
@@ -112,10 +114,13 @@ const defaultRunner: CommandRunner = (command, args) => {
 const psLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const ACL_FAILURES: Record<number, string> = {
-  3: "a protected path is missing or has more than one ACL entry",
+  3: "a protected path is missing",
   4: "inherited permissions are still enabled",
   5: "an ACL entry belongs to another user",
   6: "the current-user entry is not an allow rule",
+  7: "the current-user entry does not grant FullControl",
+  8: "a protected path has no ACL entry",
+  9: "a protected path has more than one ACL entry",
 };
 
 function aclVerificationScript(home: string, sid: string): string {
@@ -127,10 +132,12 @@ function aclVerificationScript(home: string, sid: string): string {
     "foreach($p in $paths){",
     "if(-not (Test-Path -LiteralPath $p)){exit 3};",
     "$acl=Get-Acl -LiteralPath $p;",
-    "if($acl.Access.Count -ne 1){exit 3};",
+    "if($acl.Access.Count -eq 0){exit 8};",
+    "if($acl.Access.Count -ne 1){exit 9};",
     "if($acl.AreAccessRulesProtected -ne $true){exit 4};",
     "if($acl.Access[0].IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -ne $sid){exit 5};",
     "if($acl.Access[0].AccessControlType -ne 'Allow'){exit 6};",
+    "if(-not $acl.Access[0].FileSystemRights.HasFlag([System.Security.AccessControl.FileSystemRights]::FullControl)){exit 7};",
     "}",
   ].join("");
 }
@@ -151,8 +158,8 @@ export function windowsAclCheck(home: string, run: CommandRunner = defaultRunner
   }
 }
 
-function defaultServiceState(home: string, port: number): Promise<ServiceState> {
-  return windowsService.status({ home, nodePath: process.execPath, cliPath: process.execPath, port });
+function defaultServiceState(home: string, port: number, cliPath: string): Promise<ServiceState> {
+  return windowsService.status({ home, nodePath: process.execPath, cliPath, port });
 }
 
 /** Live advertised `.local` from the bridge's loopback-only health response. */
@@ -184,10 +191,17 @@ function serviceCheck(state: ServiceState): Check {
   return { name: "service", status: "WARN", detail: "task is not installed; run `pocketpet service install` (needs one UAC prompt)" };
 }
 
-function firewallCheck(present: boolean): Check {
-  return present
-    ? { name: "firewall", status: "PASS", detail: "Private-profile TCP and mDNS rules are present" }
-    : { name: "firewall", status: "WARN", detail: "PocketPet firewall rules are missing; .local and phone access may be blocked" };
+function firewallCheck(audit: FirewallAudit): Check {
+  switch (audit.level) {
+    case "verified":
+      return { name: "firewall", status: "PASS", detail: audit.detail };
+    case "mismatch":
+      return { name: "firewall", status: "WARN", detail: `${audit.detail}; rerun \`pocketpet service install\`` };
+    case "names-only":
+      return { name: "firewall", status: "WARN", detail: audit.detail };
+    case "missing":
+      return { name: "firewall", status: "WARN", detail: `${audit.detail}; run \`pocketpet service install\`` };
+  }
 }
 
 function mdnsCheck(localHostname: string | null): Check {
@@ -199,9 +213,13 @@ function mdnsCheck(localHostname: string | null): Check {
 async function windowsChecks(opts: Options, config: ReturnType<typeof loadConfig> | null): Promise<Check[]> {
   const probes = opts.windows ?? {};
   const port = config?.port ?? null;
+  const cliPath = opts.cliPath ?? process.argv[1] ?? process.execPath;
   const [service, firewall, acl, localHostname] = await Promise.all([
-    safeCall(() => (probes.service ?? (() => defaultServiceState(opts.home, port ?? 7788)))(), { installed: false, running: false }),
-    safeCall(() => (probes.firewall ?? firewallRulesPresent)(), false),
+    safeCall(() => (probes.service ?? (() => defaultServiceState(opts.home, port ?? 7788, cliPath)))(), { installed: false, running: false }),
+    safeCall(() => (probes.firewall ?? (() => auditFirewallRules(port, process.execPath)))(), {
+      level: "names-only",
+      detail: "PocketPet firewall rule content could not be read; profile/port/content not verified",
+    } satisfies FirewallAudit),
     safeCall(() => (probes.acl ?? (() => windowsAclCheck(opts.home)))(), { ok: false, detail: "could not verify the current-user ACL" }),
     safeCall(() => (probes.localHostname ?? (() => defaultLocalHostname(port)))(), null),
   ]);
@@ -228,7 +246,7 @@ export async function doctorChecks(opts: Options): Promise<Check[]> {
   }
 
   const settingsPath = opts.settingsPath ?? join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "settings.json");
-  checks.push(claudeHookCheck(settingsPath));
+  checks.push(claudeHookCheck(settingsPath, platformName));
   checks.push(qoderHookCheck(opts.qoderSettingsPaths ?? qoderSettingsPaths()));
 
   const pets = scanLocalPets(opts.localPetDirs ?? [join(opts.home, "pets"), join(homedir(), ".codex", "pets"), join(homedir(), ".petdex", "pets")]);

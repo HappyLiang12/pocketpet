@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { askYesNo, pairingLinks } from "../src/onboarding.js";
-import { localHostname } from "../src/platform/darwin/hostname.js";
+import { createDarwinHost, localHostname } from "../src/platform/darwin/hostname.js";
 
 const fakeIfaces = {
   en0: [{ address: "192.168.1.5", family: "IPv4", internal: false, netmask: "255.255.255.0", mac: "aa", cidr: null }],
@@ -32,6 +32,32 @@ describe("localHostname", () => {
 
   it("returns null when scutil prints nothing", () => {
     expect(localHostname(() => "  \n")).toBeNull();
+  });
+});
+
+describe("createDarwinHost", () => {
+  it("caches the first successful scutil lookup so /health spawns it once", () => {
+    let calls = 0;
+    const host = createDarwinHost(() => {
+      calls += 1;
+      return "Happy-Mac.local\n";
+    });
+    expect(host.localHostname()).toBe("Happy-Mac.local");
+    expect(host.localHostname()).toBe("Happy-Mac.local");
+    expect(host.localHostname()).toBe("Happy-Mac.local");
+    expect(calls).toBe(1);
+  });
+
+  it("does not cache a failed lookup and still returns null once", () => {
+    let calls = 0;
+    const host = createDarwinHost(() => {
+      calls += 1;
+      if (calls === 1) throw new Error("scutil failed");
+      return "Happy-Mac.local\n";
+    });
+    expect(host.localHostname()).toBeNull();
+    expect(host.localHostname()).toBe("Happy-Mac.local");
+    expect(calls).toBe(2);
   });
 });
 

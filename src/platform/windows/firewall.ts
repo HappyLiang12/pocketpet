@@ -82,3 +82,103 @@ export function firewallRulesPresent(run: CommandRunner = defaultRunner): boolea
     (name) => run("netsh", ["advfirewall", "firewall", "show", "rule", `name=${name}`]).status === 0,
   );
 }
+
+const POWERSHELL = "powershell.exe";
+
+/** PowerShell single-quoted literal: only `'` needs doubling. */
+const psLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
+/**
+ * Content-verification result for the doctor. `verified` is only ever returned
+ * from the PowerShell property query; a netsh name lookup alone can only reach
+ * `names-only`, which the doctor reports as WARN.
+ */
+export type FirewallAudit = {
+  level: "verified" | "mismatch" | "names-only" | "missing";
+  detail: string;
+};
+
+/** Fixed reasons from the property query; no rule content or path is printed. */
+const AUDIT_FAILURES: Record<number, string> = {
+  4: "duplicate PocketPet firewall rules exist",
+  5: "a rule is disabled",
+  6: "a rule is not inbound",
+  7: "a rule does not allow traffic",
+  8: "a rule is not Private-profile only",
+  9: "a rule has the wrong protocol",
+  10: "a rule has the wrong local port",
+  11: "a rule is scoped to a different program",
+};
+
+/**
+ * Locale-independent property query: cmdlet property values and enum values
+ * (`Inbound`, `Allow`, `True`, profile bit 2) are invariant, unlike localized
+ * netsh output. Exits non-zero with a fixed code on the first mismatch.
+ */
+function auditScript(port: number, program: string): string {
+  const expected = [
+    `@{Name=${psLiteral(FIREWALL_TCP)};Protocol='TCP';Port=${psLiteral(String(port))}}`,
+    `@{Name=${psLiteral(FIREWALL_MDNS)};Protocol='UDP';Port='5353'}`,
+  ];
+  return [
+    "$ErrorActionPreference='Stop';",
+    `$program=${psLiteral(program)};`,
+    `$expected=@(${expected.join(",")});`,
+    "foreach($e in $expected){",
+    "$rules=@(Get-NetFirewallRule -DisplayName $e.Name -ErrorAction SilentlyContinue);",
+    "if($rules.Count -eq 0){exit 3};",
+    "if($rules.Count -gt 1){exit 4};",
+    "$r=$rules[0];",
+    "if($r.Enabled -ne 'True'){exit 5};",
+    "if($r.Direction -ne 'Inbound'){exit 6};",
+    "if($r.Action -ne 'Allow'){exit 7};",
+    "if([int]$r.Profile -ne 2){exit 8};",
+    "$pf=Get-NetFirewallPortFilter -AssociatedNetFirewallRule $r;",
+    "if($pf.Protocol -ne $e.Protocol){exit 9};",
+    "if(@($pf.LocalPort) -notcontains $e.Port){exit 10};",
+    "$af=Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $r;",
+    "if($af.Program -ne $program){exit 11};",
+    "}",
+    "exit 0",
+  ].join("");
+}
+
+function auditNames(run: CommandRunner): FirewallAudit {
+  try {
+    return firewallRulesPresent(run)
+      ? { level: "names-only", detail: "PocketPet firewall rule names exist; profile/port/content not verified" }
+      : { level: "missing", detail: "PocketPet firewall rules are missing; .local and phone access may be blocked" };
+  } catch {
+    return { level: "names-only", detail: "PocketPet firewall rule content could not be read; profile/port/content not verified" };
+  }
+}
+
+/**
+ * Verify the actual firewall rule content (profile, direction, action, protocol,
+ * local port, program) before the doctor may show PASS. Anything short of the
+ * property query succeeding degrades to names-only WARN evidence; names are
+ * never reported as verified content.
+ */
+export function auditFirewallRules(
+  port: number | null,
+  program: string = process.execPath,
+  run: CommandRunner = defaultRunner,
+): FirewallAudit {
+  if (port === null || !Number.isInteger(port) || port < 1 || port > 65535) return auditNames(run);
+  try {
+    const encoded = Buffer.from(auditScript(port, program), "utf16le").toString("base64");
+    const result = run(POWERSHELL, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]);
+    if (result.status === 0) {
+      return {
+        level: "verified",
+        detail: `Private-profile inbound TCP ${port} and mDNS (UDP 5353) allow rules are verified for the bridge program`,
+      };
+    }
+    if (result.status === 3) return { level: "missing", detail: "PocketPet firewall rules are missing; .local and phone access may be blocked" };
+    const reason = AUDIT_FAILURES[result.status];
+    if (reason) return { level: "mismatch", detail: `PocketPet firewall rule names exist but the content does not match: ${reason}` };
+  } catch {
+    // PowerShell or the NetSecurity module is unavailable; fall through to names.
+  }
+  return auditNames(run);
+}

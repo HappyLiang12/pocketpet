@@ -5,6 +5,8 @@ import { windowsService } from "./service.js";
 
 export { createWindowsHost, sanitizeHostname, windowsHost } from "./hostname.js";
 export type { MdnsTransportHandle, WindowsHostDeps } from "./hostname.js";
+export { FIREWALL_MDNS, FIREWALL_TCP, auditFirewallRules, firewallAddArgs, firewallRemoveArgs, firewallRules, firewallRulesPresent } from "./firewall.js";
+export type { FirewallAudit, FirewallRule } from "./firewall.js";
 export { advertisedAddresses, startMdns } from "./mdns.js";
 export type { MdnsAnswer, MdnsPacket, MdnsQuery, MdnsTransport } from "./mdns.js";
 export { currentUserSid, windowsSecurity, WindowsSecurityError } from "./security.js";
