@@ -15,8 +15,9 @@ import { doctorChecks } from "./doctor.js";
 import { pairingCopy, pickLanguage } from "./i18n.js";
 import { askYesNo, pairingLinks, type InterfaceMap, type QrHost } from "./onboarding.js";
 import { platform } from "./platform/index.js";
-import type { Platform, ServiceConfig } from "./platform/types.js";
+import type { Platform, PrivatePaths, ServiceConfig, ServiceManager } from "./platform/types.js";
 import { windowsHookCommand } from "./platform/windows/hooks.js";
+import { installPortableStartup, portableStartupStatus, uninstallPortableStartup } from "./platform/windows/startup.js";
 import { startBridge, type Bridge, type BridgeOptions } from "./server.js";
 
 const HOOK_TIMEOUT_MS = 500;
@@ -371,6 +372,7 @@ type UpOptions = { yes: boolean; noHooks: boolean; noService: boolean; noOpen: b
 
 const UP_USAGE = "usage: pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]";
 const SERVICE_USAGE = "usage: pocketpet service install|uninstall|status";
+const STARTUP_USAGE = "usage: pocketpet startup install|uninstall|status";
 
 function parseQrHost(value: string): QrHost | null {
   return value === "ip" || value === "local" ? value : null;
@@ -599,6 +601,7 @@ export async function runUp(args: string[], deps: UpDeps = {}): Promise<number> 
         // bridge usable in the foreground; never claim the service is running.
         console.error("Continuing in the foreground; run `pocketpet service install` from an elevated shell later.");
         console.error(`  ${elevatedServiceCommand(serviceConfig, "install")}`);
+        console.error("If this account has no administrator credentials, run `pocketpet startup install` for Portable Mode (no admin; IP/USB; no .local).");
         fellBack = true;
       }
     }
@@ -669,6 +672,9 @@ function serviceFailureMessage(
   if (/cancel/i.test(message)) {
     return `Could not ${action} the bridge service (${label}). The elevation prompt was canceled.`;
   }
+  if (options.windows && /timed out/i.test(message)) {
+    return `Could not ${action} the bridge service (${label}). The elevation prompt timed out. If this account has no administrator credentials, run \`pocketpet startup install\` for Portable Mode (no admin; IP/USB; no .local).`;
+  }
   const refusal = message.includes("build and run the compiled CLI") ? ` ${message}` : "";
   if (options.windows) {
     const command = options.command ? ` Run this exact command in an elevated PowerShell: ${options.command}` : "";
@@ -681,6 +687,8 @@ export type ServiceDeps = {
   platform?: Platform;
   /** Test/selection hook: platform name that selects the Windows elevation advice. */
   platformName?: NodeJS.Platform;
+  /** Test/selection hook: private-path protection for the config store. */
+  security?: PrivatePaths;
 };
 
 export async function runService(action: string | undefined, deps: ServiceDeps = {}): Promise<number> {
@@ -690,10 +698,11 @@ export async function runService(action: string | undefined, deps: ServiceDeps =
   }
   const target = deps.platform ?? platform;
   const platformName = deps.platformName ?? process.platform;
+  const security = deps.security ?? platform.security;
   const home = pocketpetHome();
   let config: Config;
   try {
-    config = ensureConfig(home);
+    config = ensureConfig(home, process.env, security);
   } catch {
     console.error(`config unreadable: ${configPath(home)}`);
     return 1;
@@ -733,6 +742,83 @@ export async function runService(action: string | undefined, deps: ServiceDeps =
   const running = (await target.service.status(serviceConfig)).running;
   console.log(running ? `Bridge service is running (${target.service.label}).` : `Bridge service is not running (${target.service.label}).`);
   return running ? 0 : 1;
+}
+
+export type StartupDeps = {
+  platformName?: NodeJS.Platform;
+  /** Test/selection hook: the per-user Startup folder. */
+  startupDir?: string;
+  nodePath?: string;
+  cliPath?: string;
+  security?: PrivatePaths;
+  service?: Pick<ServiceManager, "status">;
+};
+
+/**
+ * Per-user Portable Mode: no elevation, no Task Scheduler, no firewall, and no
+ * `.local`. Pair over the LAN IP when Windows permits it, or over USB.
+ */
+export async function runStartup(action: string | undefined, deps: StartupDeps = {}): Promise<number> {
+  if (action !== "install" && action !== "uninstall" && action !== "status") {
+    console.error(STARTUP_USAGE);
+    return 2;
+  }
+  const platformName = deps.platformName ?? process.platform;
+  if (platformName !== "win32") {
+    console.error("Portable startup is Windows-only. Use the platform login service or run `pocketpet up`.");
+    return 2;
+  }
+  const home = pocketpetHome();
+  const security = deps.security ?? platform.security;
+  let config: Config;
+  try {
+    config = ensureConfig(home, process.env, security);
+  } catch {
+    console.error(`config unreadable: ${configPath(home)}`);
+    return 1;
+  }
+  const serviceConfig: ServiceConfig = {
+    home,
+    nodePath: deps.nodePath ?? process.execPath,
+    cliPath: deps.cliPath ?? fileURLToPath(import.meta.url),
+    port: config.port,
+  };
+  const startupDeps = {
+    startupDir: deps.startupDir,
+    protectLogs: security.protectLogs,
+    protectFile: security.protectFile,
+  };
+  if (action === "install") {
+    try {
+      const service = await (deps.service ?? platform.service).status(serviceConfig);
+      if (service.installed) {
+        console.error("The PocketPet Bridge service is installed. Run `pocketpet service uninstall` before using Portable Mode.");
+        return 1;
+      }
+    } catch {
+      // The service probe is optional; a missing admin task is the normal case.
+    }
+    try {
+      installPortableStartup(serviceConfig, startupDeps);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "could not install Portable startup");
+      return 1;
+    }
+    console.log("Portable startup installed. It starts at your next Windows logon without admin; no firewall or .local; use the IP or USB pairing.");
+    return 0;
+  }
+  if (action === "status") {
+    const status = portableStartupStatus(serviceConfig, { startupDir: deps.startupDir });
+    console.log(
+      status.installed
+        ? "Portable startup is installed (no admin; no firewall; no .local; use IP or USB)."
+        : "Portable startup is not installed.",
+    );
+    return status.installed ? 0 : 1;
+  }
+  uninstallPortableStartup(serviceConfig, { startupDir: deps.startupDir });
+  console.log("Removed Portable startup. Config, pets, cache and logs are kept.");
+  return 0;
 }
 
 async function runServer(args: string[] = []): Promise<number> {
@@ -780,6 +866,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     if (command === "up") return await runUp(args);
     if (command === "run" || command === undefined) return await runServer(args);
     if (command === "service") return await runService(arg);
+    if (command === "startup") return await runStartup(arg);
     if (command === "doctor") return await runDoctor();
     if (command === "hook") {
       await runHook(arg ?? "");
@@ -791,7 +878,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.error(`pocketpet: ${command ?? "run"} failed`);
     return 1;
   }
-  console.error("usage: pocketpet init | up | run | service <install|uninstall|status> | doctor | hook claude|qoder");
+  console.error("usage: pocketpet init | up | run | service <install|uninstall|status> | startup <install|uninstall|status> | doctor | hook claude|qoder");
   return 2;
 }
 

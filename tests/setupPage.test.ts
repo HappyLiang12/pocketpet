@@ -103,6 +103,21 @@ describe("setupPageHtml", () => {
     expect(html).not.toMatch(/\bMac\b/);
   });
 
+  it("offers Portable Mode as a no-admin login alternative", () => {
+    for (const lang of ["en", "zh-Hant", "zh-Hans"] as const) {
+      const html = setupPageHtml({ ...base, lang });
+      expect(html).toContain('id="startup-install-command"');
+      expect(html).toContain("pocketpet startup install");
+      expect(html).toContain("Portable Mode");
+    }
+  });
+
+  it("shows Portable Mode only on Windows hosts", () => {
+    const mac = setupPageHtml({ ...base, host: { ...base.host, os: "macOS" } });
+    expect(mac).not.toContain('id="startup-install-command"');
+    expect(mac).not.toContain("pocketpet startup install");
+  });
+
   it("renders copy targets for URLs, commands and diagnostics without a token in diagnostics", () => {
     const html = setupPageHtml(base);
     expect(html).toContain('id="pair-lan-0"');
@@ -150,7 +165,7 @@ describe("setupPageHtml", () => {
   it("omits the .local section when no hostname is available", () => {
     const html = setupPageHtml({ ...base, localUrl: null, hostname: null });
     expect(html).not.toContain("Bonjour");
-    expect(html).not.toContain(".local");
+    expect(html).not.toContain('id="pair-local-url"');
   });
 
   it("escapes injected URLs and hostile hostnames", () => {

@@ -93,6 +93,9 @@ const enSetup = {
     "This setup page opens only on the computer running PocketPet. Open <code>{setupUrl}</code> on that computer (or run <code>pocketpet up</code>), then scan the QR code on the page with your phone camera.",
   deniedNote:
     "Scan once per phone; the same QR code can be reused until you change the token. Phones do not need <code>/setup</code>.",
+  portableHeading: "Portable Mode (no admin)",
+  portableBody:
+    "No administrator? Start PocketPet at logon with your user account. No UAC, firewall rules, or <code>.local</code>; pair with the IP URL or USB <code>adb reverse</code>.",
   unauthorizedHtmlTitle: "This browser is not paired",
   unauthorizedHeading: "This browser is not paired",
   unauthorizedBody:
@@ -200,6 +203,9 @@ export const setupCopy = {
       "呢個配對頁只可以喺執行 PocketPet 嘅電腦本機開啟。請喺嗰部電腦開 <code>{setupUrl}</code>（或執行 <code>pocketpet up</code>），然後用手機相機掃描頁面上嘅 QR。",
     deniedNote:
       "每部手機各自掃一次；同一個 QR 可以重複使用，直到你更改 token。手機唔需要開 <code>/setup</code>。",
+    portableHeading: "Portable Mode（不需要管理員）",
+    portableBody:
+      "冇管理員權限？用你嘅使用者帳戶喺登入時啟動 PocketPet。唔需要 UAC、firewall rule 或 <code>.local</code>；用 IP 網址或 USB <code>adb reverse</code> 配對。",
     unauthorizedHtmlTitle: "此瀏覽器尚未配對",
     unauthorizedHeading: "此瀏覽器尚未配對",
     unauthorizedBody:
@@ -281,6 +287,9 @@ export const setupCopy = {
     deniedBody:
       "这个配对页只能在运行 PocketPet 的电脑本机打开。请在那台电脑上打开 <code>{setupUrl}</code>（或执行 <code>pocketpet up</code>），然后用手机相机扫描页面上的二维码。",
     deniedNote: "每部手机各自扫描一次；同一个二维码可以重复使用，直到你更改 token。手机不需要打开 <code>/setup</code>。",
+    portableHeading: "Portable Mode（无需管理员）",
+    portableBody:
+      "没有管理员权限？用你的用户账户在登录时启动 PocketPet。不需要 UAC、防火墙规则或 <code>.local</code>；用 IP 网址或 USB <code>adb reverse</code> 配对。",
     unauthorizedHtmlTitle: "此浏览器尚未配对",
     unauthorizedHeading: "此浏览器尚未配对",
     unauthorizedBody:

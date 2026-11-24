@@ -132,6 +132,17 @@ export function setupPageHtml(input: SetupPageInput): string {
   const diagnostics = `${copy.portLabel} ${port} · ${copy.hostOsLabel} ${escapeHtml(host.os)} ${escapeHtml(host.osVersion)} · ${copy.bridgeVersionLabel} v${escapeHtml(host.bridgeVersion)} · ${copy.logPathLabel} ${escapeHtml(logPath)}`;
   const cssLinks = assets.css.map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("\n");
   const scriptTag = assets.js ? `<script type="module" src="${escapeHtml(assets.js)}"></script>` : "";
+  const portableSection =
+    host.os === "Windows"
+      ? `    <section class="portable-mode">
+      <h3>${copy.portableHeading}</h3>
+      <p>${copy.portableBody}</p>
+      <div class="command-row">
+        <pre><code id="startup-install-command">pocketpet startup install</code></pre>
+        <button type="button" class="button copy-button" data-copy-target="startup-install-command">${copy.copyCommand}</button>
+      </div>
+    </section>`
+      : "";
 
   return `<!doctype html>
 <html lang="${lang}">
@@ -251,6 +262,7 @@ ${localSection}
       <pre><code id="service-install-command">pocketpet service install</code></pre>
       <button type="button" class="button copy-button" data-copy-target="service-install-command">${copy.copyCommand}</button>
     </div>
+${portableSection}
   </section>
 </main>
 <noscript><p class="noscript">${copy.noJsNote}</p></noscript>

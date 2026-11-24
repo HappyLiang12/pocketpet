@@ -37,16 +37,16 @@ PocketPet 支持 macOS、Windows 11 x64 与 Windows 10 22H2 x64。Bridge、手�
 | 主机 | 支持 | Bridge、手机页面、Studio | Agent hooks | 登录服务 | `.local` | 配置保护 |
 | --- | --- | --- | --- | --- | --- | --- |
 | macOS（当前） | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | launchd LaunchAgent | 系统 Bonjour 与 `scutil` | 目录 0700、文件 0600 |
-| Windows 11 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
-| Windows 10 22H2 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
+| Windows 11 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（管理员）或 per-user Startup（Portable Mode；无需管理员） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
+| Windows 10 22H2 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（管理员）或 per-user Startup（Portable Mode；无需管理员） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
 | Windows on ARM | 未声明 | 未测试 | 未测试 | 未测试 | 未测试 | 未测试 |
 | Linux | 尽力支持 | 仅 bridge | 未测试 | 无 | 无 | 仅 POSIX mode bits；无 ACL 承诺 |
 
-Windows 10 22H2 x64 已由用户根据实机结果纳入支持：bridge、ACL、服务安装、防火墙与手机 IP 已验证；uninstall/reinstall、登录持久化、手机 `.local`、Qoder 真实 app 与官方 Windows 11 x64 实机验收仍为 NOT RUN。Windows CI matrix 已在 PR 通过。见[验收记录](docs/acceptance/windows-support.md)。
+Windows 10 22H2 x64 已由用户根据实机结果纳入支持：bridge、ACL、服务安装、防火墙与手机 IP 已验证；uninstall/reinstall、登录持久化、手机 `.local`、Qoder 真实 app 与官方 Windows 11 x64 实机验收仍为 NOT RUN。Windows CI matrix 已在 PR 通过。见[验收记录](docs/acceptance/windows-support.md)。Portable Mode 无需管理员，另有[验收记录](docs/acceptance/windows-portable-mode.md)。
 
 - Node.js >= 20.6。
 - 手机与运行 bridge 的电脑在同一 WiFi（不同网络可用 USB `adb reverse`）。
-- Windows 上安装与卸载服务各需要一次 UAC，防火墙规则仅限 Private 配置文件。Linux 不承诺服务、`.local` 或 ACL。
+- Windows 上安装与卸载服务各需要一次 UAC，防火墙规则仅限 Private 配置文件。没有管理员帐户时请用 Portable Mode（`pocketpet startup install`）配合 IP/USB；它没有防火墙规则和 `.local`。Linux 不承诺服务、`.local` 或 ACL。
 - 当前包含 Claude Code 与 Qoder adapter；Qoder 的真实 app 验收为 NOT RUN。hooks 只会安装到已经存在的目录。
 
 ## 快速开始
@@ -80,6 +80,23 @@ pocketpet up
 - **`.local`。** 仅当 bridge 启动时两条 PocketPet 防火墙规则都存在且存在非 loopback IPv4 地址，mDNS responder 才广播 `<computer-name>.local`；检查只在启动时进行，之后删除规则不会撤回已在运行的广播，需重启 bridge 才生效。名称会转为小写并规范为 `[a-z0-9-]`；重名不会自动改名。网络前提与 IP/USB 回退见下方「`.local` 地址与登录服务」。
 - **配置保护。** home、`config.json`、logs 与 launcher 默认仅当前用户可访问。管理员可以取得所有权，以 SYSTEM 运行的备份工具可能无法读取；见 [SECURITY.md](SECURITY.md)。
 - **疑难排解。** 见「疑难解答」中的 Windows 条目。真实机器验收模板与只读探测脚本见 `docs/acceptance/windows-support.md` 与 `scripts/windows-acceptance.ps1`。
+
+### Portable Mode（无需管理员）
+
+当 Windows 帐户无法完成 UAC 凭据提示时使用。它不会安装 Windows 服务或防火墙规则。
+
+```powershell
+pocketpet startup install   # 当前用户 Startup；下次登录生效
+pocketpet startup status
+pocketpet startup uninstall
+```
+
+- 在已登录用户会话中、登录后启动；不在登录前运行，没有 Task Scheduler 任务，也不会自动从崩溃恢复。
+- Windows 已允许 bridge 时用 **IP** 网址配对，或用 **USB** `adb reverse`（Android）。此模式下 iPhone 仅支持 IP。
+- 因为没有防火墙规则，**不会广播 `.local`**；IP 与 USB 是正式配对路径。
+- 生成的 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\PocketPet Portable.vbs` 与 `<home>\bridge-portable.ps1` 不含 token；launcher 使用当前用户 ACL。
+- 已安装 Task Scheduler 服务时会拒绝 Portable Mode；请先卸载服务，只可有一个登录机制占用 7788。
+- 公司 policy 若封锁 Startup 脚本，可继续用前台 `pocketpet up --no-service`。
 
 ## 设置页
 
@@ -160,7 +177,7 @@ adb reverse tcp:7788 tcp:7788
 
 ## 状态与平台范围
 
-当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation + Windows 11/10 支持。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd（macOS）与 Task Scheduler（Windows）登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
+当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation + Windows 11/10 支持（含无需管理员的 Portable Mode）。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd（macOS）、Task Scheduler（管理员）与 per-user Startup（Portable Mode）登录方式、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
 
 Windows 11 x64 与 Windows 10 22H2 x64 是支持的 Windows 主机；Windows on ARM 未测试且未声明，Linux 仅尽力支持且没有支持承诺。Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。设计见 `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`，真实机器验收见 `docs/acceptance/windows-support.md`。
 
@@ -170,7 +187,7 @@ Windows 11 x64 与 Windows 10 22H2 x64 是支持的 Windows 主机；Windows on 
 - `unauthorized`：打开了没有 token 的 `/`。扫描 QR，或使用 `/setup` 上列出的带 token 网址。
 - 设置页只在电脑上打开：`/setup` 只在运行 bridge 的电脑上打开；手机扫描 QR。
 - 完全连不上电脑：确认手机与电脑在同一 WiFi/subnet（访客网络与 AP 隔离会阻挡）；否则使用 USB `adb reverse`。
-- Windows 上 `pocketpet service install` 被取消或失败：在普通 PowerShell 重新运行并接受一次 UAC，或继续使用 `--no-service` 与 IP/USB 地址；`pocketpet up` 会打印重试命令。
+- Windows 上 `pocketpet service install` 被取消、失败或 UAC 提示超时：在普通 PowerShell 重新运行并接受一次 UAC，或在没有管理员帐户时使用 Portable Mode（`pocketpet startup install`）；`pocketpet up` 会打印重试命令。
 - Windows 上手机或 `.local` 连不上：确认网络配置文件为 Private（设置 → 网络和 Internet → Wi-Fi → 网络属性），`pocketpet doctor` 中两条 PocketPet 防火墙规则通过，路由器/VPN 未阻止 multicast。Public/Domain 网络与 AP 隔离不会自动开放；请使用 IP 或 USB。
 - Windows 登录后服务未启动：运行 `pocketpet service status` 与 `pocketpet doctor`，查看 `%USERPROFILE%\.pocketpet\logs\bridge.log`，再用 `pocketpet service install` 重装。该任务是当前用户的登录任务，需要交互式登录。
 - Windows 备份工具无法读取 config：默认仅当前用户可访问；管理员可取得所有权，请以当前用户运行备份或排除该路径。见 [SECURITY.md](SECURITY.md)。

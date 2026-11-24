@@ -25,6 +25,12 @@ import { POWERSHELL, powershellEnv } from "./powershell.js";
 /** `ERROR_CANCELLED` (1223) from a dismissed UAC prompt. */
 export const ELEVATION_CANCELLED = 1223;
 
+/** Internal status: the elevation prompt did not finish within the bounded wait. */
+export const ELEVATION_TIMED_OUT = 124;
+
+/** A UAC credential prompt on a standard account must not hang the CLI forever. */
+export const ELEVATION_TIMEOUT_MS = 30_000;
+
 /**
  * Windows caps a process command line at 32767 characters. The wrapper carries
  * the base64 script plus PowerShell arguments, so fail closed well below it
@@ -199,6 +205,12 @@ function assertElevated(result: CommandResult, action: "install" | "uninstall"):
       cancelled: true,
     });
   }
+  if (result.status === ELEVATION_TIMED_OUT) {
+    throw new WindowsServiceError(
+      `${action} timed out waiting for the elevation prompt; if this account has no administrator credentials, run \`pocketpet startup install\` for Portable Mode`,
+      { exitCode: result.status },
+    );
+  }
   if (result.status !== 0) {
     throw new WindowsServiceError(`elevated ${action} failed (exit ${result.status})`, { exitCode: result.status });
   }
@@ -307,15 +319,28 @@ export function defaultElevatedRunner(script: string): Promise<CommandResult> {
     execFile(
       POWERSHELL,
       ["-NoProfile", "-NonInteractive", "-Command", wrapper],
-      { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, env: powershellEnv() },
+      {
+        encoding: "utf8",
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+        env: powershellEnv(),
+        timeout: ELEVATION_TIMEOUT_MS,
+      },
       (error, stdout, stderr) => {
         if (!error) {
           resolve({ status: 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
           return;
         }
-        const failed = error as { code?: number | string; stdout?: string | Buffer; stderr?: string | Buffer };
+        const failed = error as {
+          code?: number | string | null;
+          killed?: boolean;
+          signal?: NodeJS.Signals | null;
+          stdout?: string | Buffer;
+          stderr?: string | Buffer;
+        };
+        const timedOut = failed.killed === true || failed.code === "ETIMEDOUT" || failed.signal === "SIGTERM";
         resolve({
-          status: typeof failed.code === "number" ? failed.code : 1,
+          status: timedOut ? ELEVATION_TIMED_OUT : typeof failed.code === "number" ? failed.code : 1,
           stdout: failed.stdout?.toString() ?? String(stdout ?? ""),
           stderr: failed.stderr?.toString() ?? String(stderr ?? ""),
         });

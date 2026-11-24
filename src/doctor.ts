@@ -11,6 +11,7 @@ import type { CommandRunner, ServiceState } from "./platform/types.js";
 import { auditFirewallRules, type FirewallAudit } from "./platform/windows/firewall.js";
 import { currentUserSid } from "./platform/windows/security.js";
 import { windowsService } from "./platform/windows/service.js";
+import { portableStartupStatus, type PortableStartupStatus } from "./platform/windows/startup.js";
 
 export type Check = { name: string; status: "PASS" | "WARN" | "FAIL"; detail: string };
 
@@ -23,6 +24,7 @@ export type WindowsDoctorProbes = {
   firewall?: () => FirewallAudit;
   acl?: () => { ok: boolean; detail: string };
   localHostname?: () => Promise<string | null> | string | null;
+  portableStartup?: () => PortableStartupStatus;
 };
 
 type Options = {
@@ -210,11 +212,17 @@ function mdnsCheck(localHostname: string | null): Check {
     : { name: "mdns", status: "WARN", detail: "no live .local name; IP/USB pairing remains available" };
 }
 
+function portableStartupCheck(status: PortableStartupStatus): Check {
+  return status.installed
+    ? { name: "portable startup", status: "PASS", detail: "per-user Startup installed; no admin, no firewall, no .local; use IP/USB" }
+    : { name: "portable startup", status: "WARN", detail: "not installed; run `pocketpet startup install` for Portable Mode (no admin; IP/USB; no .local)" };
+}
+
 async function windowsChecks(opts: Options, config: ReturnType<typeof loadConfig> | null): Promise<Check[]> {
   const probes = opts.windows ?? {};
   const port = config?.port ?? null;
   const cliPath = opts.cliPath ?? process.argv[1] ?? process.execPath;
-  const [service, firewall, acl, localHostname] = await Promise.all([
+  const [service, firewall, acl, localHostname, portableStartup] = await Promise.all([
     safeCall(() => (probes.service ?? (() => defaultServiceState(opts.home, port ?? 7788, cliPath)))(), { installed: false, running: false }),
     safeCall(() => (probes.firewall ?? (() => auditFirewallRules(port, process.execPath)))(), {
       level: "names-only",
@@ -222,12 +230,19 @@ async function windowsChecks(opts: Options, config: ReturnType<typeof loadConfig
     } satisfies FirewallAudit),
     safeCall(() => (probes.acl ?? (() => windowsAclCheck(opts.home)))(), { ok: false, detail: "could not verify the current-user ACL" }),
     safeCall(() => (probes.localHostname ?? (() => defaultLocalHostname(port)))(), null),
+    safeCall(
+      () =>
+        (probes.portableStartup ??
+          (() => portableStartupStatus({ home: opts.home, nodePath: process.execPath, cliPath, port: port ?? 7788 })))(),
+      { installed: false, launcher: false, entry: false },
+    ),
   ]);
   return [
     { name: "config ACL", status: acl.ok ? "PASS" : "FAIL", detail: acl.detail },
     serviceCheck(service),
     firewallCheck(firewall),
     mdnsCheck(localHostname),
+    portableStartupCheck(portableStartup),
   ];
 }
 

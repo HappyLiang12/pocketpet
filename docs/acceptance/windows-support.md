@@ -5,6 +5,7 @@ Status: **PARTIAL**. Windows 10 22H2 x64 real-machine evidence is recorded below
 - Spec: `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`
 - Plan: `docs/superpowers/plans/2026-11-23-pocketpet-windows-support.md`
 - Support claim: Windows 11 x64 and Windows 10 22H2 x64 are supported. The user expanded the original Windows-11-only scope after the Windows 10 real-machine run; the original spec's Windows-10 exclusion is historical. Windows on ARM and Linux are not claimed.
+- Portable Mode: a no-admin, no-firewall per-user Startup path with IP/USB only and no `.local`; its real-machine gate is NOT RUN and is recorded separately in `docs/acceptance/windows-portable-mode.md`.
 - Qoder: the adapter is included and wired, but the real-app hook gate remains `NOT RUN`; no row here may describe Qoder as verified.
 
 ## Evidence rules

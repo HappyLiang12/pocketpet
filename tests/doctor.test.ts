@@ -6,6 +6,7 @@ import { ensureConfig } from "../src/config.js";
 import { CLAUDE_HOOK_EVENTS } from "../src/adapters/claudeInstall.js";
 import { QODER_HOOK_EVENTS } from "../src/adapters/qoderInstall.js";
 import { doctorChecks } from "../src/doctor.js";
+import type { FirewallAudit } from "../src/platform/windows/firewall.js";
 import { testSecurity } from "./helpers/test-platform.js";
 
 let home = "";
@@ -67,6 +68,35 @@ describe("doctorChecks", () => {
     expect(checks.find((c) => c.name === "qoder hooks")?.status).toBe("WARN");
     expect(checks.find((c) => c.name === "config")?.status).toBe("PASS");
     expect(checks.find((c) => c.name === "bridge")?.status).toBe("PASS");
+  });
+
+  it("reports Portable Mode without failing on the absent service/firewall", async () => {
+    home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+    ensureConfig(home, process.env, testSecurity);
+    const settingsPath = join(home, "settings.json");
+    writeFileSync(settingsPath, JSON.stringify({ hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: "pocketpet hook claude" }] }]])) }));
+    const checks = await doctorChecks({
+      home,
+      settingsPath,
+      qoderSettingsPaths: [qoderPath()],
+      localPetDirs: [join(home, "pets")],
+      probePort: async () => true,
+      platformName: "win32",
+      cliPath: join(home, "dist", "cli.js"),
+      windows: {
+        service: () => ({ installed: false, running: false }),
+        firewall: () => ({ level: "missing", detail: "PocketPet rules are not installed" } satisfies FirewallAudit),
+        acl: () => ({ ok: true, detail: "one current-user ACE" }),
+        localHostname: () => null,
+        portableStartup: () => ({ installed: true, launcher: true, entry: true }),
+      },
+    });
+
+    const portable = checks.find((c) => c.name === "portable startup");
+    expect(portable?.status).toBe("PASS");
+    expect(portable?.detail).toMatch(/no admin/i);
+    expect(checks.find((c) => c.name === "service")?.status).toBe("WARN");
+    expect(checks.find((c) => c.name === "firewall")?.status).toBe("WARN");
   });
 });
 
