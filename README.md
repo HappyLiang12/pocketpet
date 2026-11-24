@@ -60,7 +60,7 @@ PocketPet is supported on macOS, Windows 11 x64, and Windows 10 22H2 x64. The br
 | Windows on ARM | Not claimed | Not tested | Not tested | Not tested | Not tested | Not tested |
 | Linux | Best effort | Bridge only | Untested | None | None | POSIX mode bits only; no ACL promise |
 
-PocketPet supports Windows 11 x64 and Windows 10 22H2 x64. The Windows 10 support decision followed a real-machine run that passed bridge, ACL, service install, firewall, and phone-over-IP checks; uninstall/reinstall, logon persistence, phone `.local`, Qoder real-app, and the official Windows 11 x64 gate remain NOT RUN, and Windows CI runs on the PR. See the [acceptance record](docs/acceptance/windows-support.md).
+PocketPet supports Windows 11 x64 and Windows 10 22H2 x64. The Windows 10 support decision followed a real-machine run that passed bridge, ACL, service install, firewall, and phone-over-IP checks; uninstall/reinstall, logon persistence, phone `.local`, Qoder real-app, and the official Windows 11 x64 gate remain NOT RUN. The Windows CI matrix is green on the PR. See the [acceptance record](docs/acceptance/windows-support.md).
 
 - Node.js >= 20.6.
 - Phone on the same WiFi as the computer (USB fallback below for different networks).
