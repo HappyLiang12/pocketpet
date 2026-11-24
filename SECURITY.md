@@ -15,7 +15,7 @@ PocketPet is a local/LAN tool, not a hosted service.
 
 - `~/.pocketpet`, `logs`, and `config.json` use POSIX mode bits: directory 0700, files 0600.
 
-### Windows 11 x64
+### Windows 11 x64 / Windows 10 22H2 x64
 
 - The home directory, `config.json`, logs, and the generated `bridge-service.ps1` launcher are protected by a current-user-only DACL: one full-control allow ACE for the signed-in user's SID, with inheritance disabled and inherited or explicit entries for other users and groups removed. The DACL is verified after every create or update; if verification fails, config creation/writes fail closed and the bridge refuses to start rather than leave or serve a token-bearing file in a weaker state. Existing configs are tightened at startup before the bridge reads or serves them.
 - The guarantee is "current-user-only by default". An administrator can take ownership, so this is not a defense against a local administrator. Backup tools that run as SYSTEM may not be able to read the file; run the backup as the signed-in user or exclude the path.

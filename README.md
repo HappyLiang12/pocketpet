@@ -50,15 +50,17 @@ Screenshots use a demo session and a custom local pet named Momo. The setup QR a
 
 ## Requirements
 
-PocketPet is supported on macOS and Windows 11 x64. The bridge, phone page, Studio, and token model are the same everywhere; the login service, `.local` name, and config protection are per-OS.
+PocketPet is supported on macOS, Windows 11 x64, and Windows 10 22H2 x64. The bridge, phone page, Studio, and token model are the same everywhere; the login service, `.local` name, and config protection are per-OS.
 
 | Host | Support | Bridge, phone page, Studio | Agent hooks | Login service | `.local` | Config protection |
 | --- | --- | --- | --- | --- | --- | --- |
 | macOS (current) | Supported | Yes | Claude Code; Qoder wired, real-app gate NOT RUN | launchd LaunchAgent | Bonjour via the system responder and `scutil` | Directory 0700, files 0600 |
 | Windows 11 x64 | Supported | Yes | Claude Code; Qoder wired, real-app gate NOT RUN | Per-user Task Scheduler task at logon (hidden, least privilege) | Bundled mDNS responder; rules must be present when the bridge starts (deleting a rule later does not withdraw a running advertisement) | Current-user-only NTFS ACL on home, config, logs, and launcher |
-| Windows 10 22H2 x64 | Compatibility only; best-effort, not officially supported (gate NOT RUN) | Expected | Expected | Expected | Expected | Expected |
+| Windows 10 22H2 x64 | Supported | Yes | Claude Code; Qoder wired, real-app gate NOT RUN | Per-user Task Scheduler task at logon (hidden, least privilege) | Bundled mDNS responder; rules must be present when the bridge starts (deleting a rule later does not withdraw a running advertisement) | Current-user-only NTFS ACL on home, config, logs, and launcher |
 | Windows on ARM | Not claimed | Not tested | Not tested | Not tested | Not tested | Not tested |
 | Linux | Best effort | Bridge only | Untested | None | None | POSIX mode bits only; no ACL promise |
+
+PocketPet supports Windows 11 x64 and Windows 10 22H2 x64. The Windows 10 support decision followed a real-machine run that passed bridge, ACL, service install, firewall, and phone-over-IP checks; uninstall/reinstall, logon persistence, phone `.local`, Qoder real-app, and the official Windows 11 x64 gate remain NOT RUN, and Windows CI runs on the PR. See the [acceptance record](docs/acceptance/windows-support.md).
 
 - Node.js >= 20.6.
 - Phone on the same WiFi as the computer (USB fallback below for different networks).
@@ -74,7 +76,7 @@ npm link          # gives a stable `pocketpet` command for Claude hooks and the 
 pocketpet up
 ```
 
-The same commands work in PowerShell on Windows 11 x64; see [Windows 11 quick start](#windows-11-quick-start).
+The same commands work in PowerShell on Windows 11 x64 and Windows 10 22H2 x64; see [Windows quick start](#windows-quick-start).
 
 `pocketpet up [--yes] [--no-hooks] [--no-service] [--no-open] [--qr-host ip|local]` is the one-command first run:
 
@@ -84,7 +86,7 @@ The same commands work in PowerShell on Windows 11 x64; see [Windows 11 quick st
 4. Prints every LAN URL plus a full-size terminal QR code (first IPv4 address by default) and the three phone steps.
 5. Opens `http://127.0.0.1:<port>/setup` in the computer's browser: a loopback-only setup dashboard with Pair, Look, and System cards. Pair shows the **IP** QR, the LAN URLs, and USB instructions; the page always shows the IP QR, so `--qr-host local` only changes the terminal QR. `--no-open` keeps the page closed.
 
-### Windows 11 quick start
+### Windows quick start
 
 Run this in PowerShell from the checkout. No pre-elevated shell is needed; `pocketpet up` asks for elevation only for the login service.
 
@@ -211,7 +213,7 @@ PocketPet scans three local roots in order: `~/.pocketpet/pets`, `~/.codex/pets`
 
 ## Status
 
-Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIUX foundation + Windows 11 x64 support. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd (macOS) and Task Scheduler (Windows) login services, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. Windows 11 x64 is the official Windows host; Windows 10 22H2 is compatibility-only, Windows on ARM is untested and not claimed, and Linux remains best-effort without a support promise. The Qoder adapter is included; its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`, `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`, and `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`; real-machine Windows evidence lives in `docs/acceptance/windows-support.md`.
+Current: M1 + onboarding + Qoder adapter (included; real-app gate NOT RUN) + UIUX foundation + Windows 11/10 support. One-command setup (`pocketpet up`), the loopback setup dashboard with Pair/Look/System, launchd (macOS) and Task Scheduler (Windows) login services, the Claude Code adapter, a Studio Neutral phone display with a Live/Look/About bottom sheet, host default appearance and pet with per-phone local overrides, the shared Direct Canvas Studio, folded/wide display, Petdex catalog, USB fallback, English/繁體中文/简体中文 UI, and an in-page debug panel. Windows 11 x64 and Windows 10 22H2 x64 are supported Windows hosts; Windows on ARM is untested and not claimed, and Linux remains best-effort without a support promise. The Qoder adapter is included; its real-app gate is NOT RUN. Agent setup and update UI are out of this slice; the updater mechanism is a separate specification. Codex/OpenCode/Pi adapters, pet upload, and making `.local` the default QR host are later milestones. See `docs/superpowers/specs/2026-11-21-pocketpet-design.md`, `docs/superpowers/specs/2026-11-21-pocketpet-uiux-direction-design.md`, and `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`; real-machine Windows evidence lives in `docs/acceptance/windows-support.md`.
 
 ## Troubleshooting
 
