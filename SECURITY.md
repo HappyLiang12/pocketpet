@@ -24,6 +24,14 @@ PocketPet is a local/LAN tool, not a hosted service.
 - Firewall rules are inbound allow, Private profile only, scoped to the installed `node.exe`, and limited to the configured TCP bridge port and UDP 5353. Public and Domain networks are not opened automatically.
 - `scripts/windows-acceptance.ps1` is read-only. It may read path existence, ACL metadata (`icacls` entries and the inheritance flag), scheduled-task state, firewall rule properties, the token-free loopback `/health` response, and mDNS answers; it never reads or prints config content or the token.
 
+### Windows Portable Mode (no admin)
+
+- Portable Mode writes a token-free `PocketPet Portable.vbs` under the signed-in user's Startup folder and a token-free `bridge-portable.ps1` launcher in the PocketPet home. The launcher gets the same current-user-only ACL as the service launcher.
+- The Startup entry runs the launcher hidden in the user's session at logon. It does not install a Windows service, Task Scheduler task, or firewall rule, and it does not advertise `.local`.
+- The user Startup folder is user-writable by design. No token, QR, or pairing URL is stored there; the bridge still reads the protected config itself.
+- Portable Mode refuses to install while the Windows service is installed. The service install elevation path fails closed on timeout and points the user at Portable Mode; it does not report a false success or leave a partially installed task.
+- Pairing in Portable Mode uses the IP URL when Windows already permits the bridge, or the USB `adb reverse` path; the token/cookie/`/setup` protections are unchanged.
+
 ## Reporting a vulnerability
 
 Please use GitHub Security Advisories for this repository ("Report a vulnerability"). Do not paste tokens, QR screenshots, or personal data into a public issue. Rotate a leaked token by editing `token` in `~/.pocketpet/config.json` (Windows: `%USERPROFILE%\.pocketpet\config.json`, or under `POCKETPET_HOME`) and re-pairing every phone.

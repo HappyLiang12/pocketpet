@@ -22,6 +22,7 @@ import {
 } from "../src/platform/windows/builders.js";
 import {
   ELEVATION_CANCELLED,
+  ELEVATION_TIMED_OUT,
   WindowsServiceError,
   createWindowsService,
   defaultElevatedRunner,
@@ -533,6 +534,15 @@ describe("Windows service transaction", () => {
     expect(failure.message).toMatch(/cancel/i);
     expect(failure.message).not.toMatch(/token=|pairing|\?t=/i);
     expect(existsSync(launcher)).toBe(false);
+  });
+
+  it("surfaces an elevation timeout with a Portable Mode fallback and no launcher", async () => {
+    const { deps } = fakeDeps({ elevatedStatus: ELEVATION_TIMED_OUT });
+
+    await expect(installWindowsService(cfg, deps)).rejects.toThrow(/timed out/i);
+    await expect(installWindowsService(cfg, fakeDeps({ elevatedStatus: ELEVATION_TIMED_OUT }).deps)).rejects.toThrow(/startup install/i);
+    expect(existsSync(launcher)).toBe(false);
+    expect(readdirSync(cfg.home).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("refuses a source or missing CLI and a missing Node binary before elevation", async () => {
