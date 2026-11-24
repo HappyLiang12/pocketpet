@@ -7,6 +7,7 @@ import WebSocket from "ws";
 import { DEFAULT_APPEARANCE, normalizeAppearance } from "../src/appearance.js";
 import { ensureConfig } from "../src/config.js";
 import { urlsForPort } from "../src/net.js";
+import { platform } from "../src/platform/index.js";
 import type { HostIdentity } from "../src/platform/types.js";
 import { startBridge, setupServiceRunning, type Bridge } from "../src/server.js";
 import { testHost, testSecurity } from "./helpers/test-platform.js";
@@ -14,6 +15,7 @@ import { testHost, testSecurity } from "./helpers/test-platform.js";
 let home = "";
 let bridge: Bridge;
 let cookie = "";
+let platformSpies: Array<{ mockRestore(): void }> = [];
 
 /** Spy for the Petdex manifest fetch so tests can prove when the catalog is (not) loaded. */
 const petdexFetch = vi.fn(async () => { throw new Error("offline"); });
@@ -24,6 +26,16 @@ beforeEach(async () => {
   petdexFetch.mockClear();
   probeService.mockClear();
   home = mkdtempSync(join(tmpdir(), "pocketpet-"));
+  // Server tests use real saveConfig in request handlers. Keep the host ACL
+  // out of this in-process suite on Windows; windows*.test.ts and the Windows
+  // integration job cover the real ACL and service.
+  if (process.platform === "win32") {
+    platformSpies = [
+      vi.spyOn(platform.security, "protectHome").mockImplementation(() => {}),
+      vi.spyOn(platform.security, "protectLogs").mockImplementation(() => {}),
+      vi.spyOn(platform.security, "protectFile").mockImplementation(() => {}),
+    ];
+  }
   const webDist = join(home, "web");
   mkdirSync(webDist, { recursive: true });
   writeFileSync(join(webDist, "index.html"), "<html>ok</html>");
@@ -36,7 +48,12 @@ beforeEach(async () => {
   cookie = String(res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
 });
 
-afterEach(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
+afterEach(async () => {
+  for (const spy of platformSpies) spy.mockRestore();
+  platformSpies = [];
+  await bridge.close();
+  rmSync(home, { recursive: true, force: true });
+});
 
 const base = () => `http://127.0.0.1:${bridge.port}`;
 const authed = () => ({ headers: { cookie } });
