@@ -5,6 +5,7 @@ import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { liveLocalHostnameUntil, main, hasPocketPetHooks, hasQoderHooks, printPairing, qoderHookCommand, runService, runUp } from "../src/cli.js";
 import { CLAUDE_HOOK_EVENTS, HOOK_COMMAND } from "../src/adapters/claudeInstall.js";
@@ -99,7 +100,11 @@ async function spawnCli(
   env: Record<string, string> = {},
   timeoutMs = 20_000,
 ): Promise<SpawnedCli> {
-  const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], {
+  // The child cannot inherit Vitest's in-process platform spies. Load a
+  // test-only preload so command-output smoke tests do not touch the host ACL
+  // or mDNS; the real Windows behavior is covered by the Windows integration.
+  const preload = pathToFileURL(join(process.cwd(), "tests", "helpers", "cli-preload.ts")).href;
+  const child = spawn(process.execPath, ["--import", "tsx", "--import", preload, "src/cli.ts", ...args], {
     cwd: process.cwd(),
     env: { ...process.env, POCKETPET_HOME: home, CLAUDE_CONFIG_DIR: claudeDir, ...env },
     stdio: ["ignore", "pipe", "pipe"],

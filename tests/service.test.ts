@@ -71,7 +71,7 @@ describe.skipIf(process.platform === "win32")("servicePath", () => {
   });
 });
 
-describe("servicePlist", () => {
+describe.skipIf(process.platform === "win32")("servicePlist", () => {
   it("contains the label, program arguments, environment, and log settings", () => {
     const cfg: ServiceConfig = {
       home: "/Users/fold pet/home",
