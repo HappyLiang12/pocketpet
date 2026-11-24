@@ -42,7 +42,7 @@ PocketPet 支持 macOS、Windows 11 x64 与 Windows 10 22H2 x64。Bridge、手�
 | Windows on ARM | 未声明 | 未测试 | 未测试 | 未测试 | 未测试 | 未测试 |
 | Linux | 尽力支持 | 仅 bridge | 未测试 | 无 | 无 | 仅 POSIX mode bits；无 ACL 承诺 |
 
-Windows 10 22H2 x64 已由用户根据实机结果纳入支持：bridge、ACL、服务安装、防火墙与手机 IP 已验证；uninstall/reinstall、登录持久化、手机 `.local`、Qoder 真实 app 与官方 Windows 11 x64 实机验收仍为 NOT RUN，Windows CI 在 PR 上运行。见[验收记录](docs/acceptance/windows-support.md)。
+Windows 10 22H2 x64 已由用户根据实机结果纳入支持：bridge、ACL、服务安装、防火墙与手机 IP 已验证；uninstall/reinstall、登录持久化、手机 `.local`、Qoder 真实 app 与官方 Windows 11 x64 实机验收仍为 NOT RUN。Windows CI matrix 已在 PR 通过。见[验收记录](docs/acceptance/windows-support.md)。
 
 - Node.js >= 20.6。
 - 手机与运行 bridge 的电脑在同一 WiFi（不同网络可用 USB `adb reverse`）。

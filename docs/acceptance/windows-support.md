@@ -56,8 +56,8 @@ Paste the JSON (with the built-in redaction) into the evidence block for each re
 | 6 | UAC cancel fallback; start-time firewall gating for `.local` after a rule is deleted; no false success | Windows 11 x64 | NOT RUN | `pocketpet up` output, service exit codes, probe/doctor output before and after restart, restored rule state |
 | 7 | Official Windows 11 x64 real-machine gate on Node 24 (the issue environment), including upgrade from a prior install | Windows 11 x64, Node 24 | NOT RUN | Post-merge user test; full command log, probe JSON, installed versions |
 | 8 | Qoder real-app hook observation: a real Qoder task drives the phone pet | Windows 11 x64 with Qoder desktop | NOT RUN | Qoder version, hook settings excerpt (no token), phone screen recording; wiring alone is not a pass |
-| 9 | macOS regression: existing unit/typecheck/build/E2E, final counts recorded | macOS current, Node 20+ | PASS | 483 unit tests, 33 Playwright tests, build, typecheck at `f507fb2` |
-| 10 | Windows CI matrix (unit, build, typecheck, E2E, integration smoke) | `windows-latest` CI runner | NOT RUN | Runs on the PR; CI run URL and job result; not a substitute for gates 1-8 |
+| 9 | macOS regression: existing unit/typecheck/build/E2E, final counts recorded | macOS current, Node 20+ | PASS | 485 unit tests, 33 Playwright tests, build, typecheck at `d12d559` (macOS CI run 45320732161) |
+| 10 | Windows CI matrix (unit, build, typecheck, E2E, integration smoke) | `windows-latest` CI runner | PASS | macOS + Windows jobs green in run 45320732161; Windows integration smoke PASS; not a substitute for gates 1-8 |
 | 11 | Windows 10 22H2 x64 support evidence (bridge, phone IP, service install/status, firewall content; lifecycle gates not run) | Windows 10 22H2 x64 desktop | PARTIAL | Probe JSON, netsh content, phone connection, explicit remaining-gate list |
 | 12 | Linux / Windows on ARM | Not claimed | NOT RUN | Best-effort only; no service, `.local`, or ACL promise |
 
@@ -272,10 +272,10 @@ These are regression evidence only. They do not turn any manual gate above into 
 
 | Producer | Command | Result |
 | --- | --- | --- |
-| macOS unit/typecheck/build/E2E | `npm test`, `npm run typecheck`, `npm run build`, `npx playwright test` | PASS at `f507fb2`: 35 files / 483 unit tests, 33 Playwright tests, build and typecheck green |
-| Windows CI matrix | `.github/workflows/ci.yml` on `windows-latest` | NOT RUN yet; runs on the PR |
+| macOS unit/typecheck/build/E2E | `npm test`, `npm run typecheck`, `npm run build`, `npx playwright test` | PASS at `d12d559`: 35 files / 485 unit tests, 33 Playwright tests, build and typecheck green |
+| Windows CI matrix | `.github/workflows/ci.yml` on `windows-latest` | PASS: run 45320732161, both jobs green, Windows integration smoke PASS |
 
-Record exact counts and the run URL in the sign-off block when executed. The latest local automated evidence is `f507fb2`: macOS 35 files / 483 unit tests, 33 Playwright tests, build and typecheck green. The Windows matrix has not been executed yet; it is the PR CI producer.
+Record exact counts and the run URL in the sign-off block when executed. The latest local automated evidence is `d12d559`: macOS 35 files / 485 unit tests, 33 Playwright tests, build and typecheck green. The Windows CI matrix passed on the PR; it remains a regression producer, not a substitute for the manual gates.
 
 ### 11. Windows 10 22H2 x64 support evidence
 
