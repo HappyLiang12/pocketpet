@@ -44,7 +44,9 @@ function run(command, args) {
   } catch (error) {
     const status = typeof error.status === "number" ? error.status : 1;
     const stderr = typeof error.stderr === "string" ? error.stderr.trim() : "";
-    const detail = stderr ? `: ${stderr.split(/\r?\n/)[0]}` : "";
+    const stdout = typeof error.stdout === "string" ? error.stdout.trim() : "";
+    const detailText = stderr || stdout;
+    const detail = detailText ? `: ${detailText.split(/\r?\n/)[0]}` : "";
     throw new Error(`${command} ${args.join(" ")} failed (exit ${status})${detail}`);
   }
 }
@@ -103,11 +105,11 @@ function deleteTaskAndVerify() {
 }
 
 function deleteRuleAndVerify(name) {
-  run("netsh", ["advfirewall", "firewall", "delete", "rule", `name="${name}"`]);
+  run("netsh", ["advfirewall", "firewall", "delete", "rule", `name=${name}`]);
   // `netsh` may exit 0 with "No rules match" on some builds, so require the
   // unique name to be absent from the output before claiming removal.
   try {
-    const output = run("netsh", ["advfirewall", "firewall", "show", "rule", `name="${name}"`]);
+    const output = run("netsh", ["advfirewall", "firewall", "show", "rule", `name=${name}`]);
     if (!output.includes(name)) return;
   } catch {
     return;
@@ -143,11 +145,11 @@ try {
   for (const rule of rules) {
     run("netsh", [
       "advfirewall", "firewall", "add", "rule",
-      `name="${rule.name}"`, "dir=in", "action=allow",
+      `name=${rule.name}`, "dir=in", "action=allow",
       `protocol=${rule.protocol}`, `localport=${rule.port}`, "profile=private",
     ]);
     createdRules.add(rule.name);
-    const shown = run("netsh", ["advfirewall", "firewall", "show", "rule", `name="${rule.name}"`]);
+    const shown = run("netsh", ["advfirewall", "firewall", "show", "rule", `name=${rule.name}`]);
     if (!shown.includes(rule.name) || !shown.includes(String(rule.port))) {
       throw new Error(`firewall rule ${rule.name} was not returned by netsh`);
     }
