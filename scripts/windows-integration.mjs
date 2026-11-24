@@ -49,32 +49,6 @@ function run(command, args) {
   }
 }
 
-/**
- * Run the real windowsSecurity commands with the same runner contract, but
- * surface PowerShell stderr when an ACL call fails. The product runner keeps
- * stderr out of user errors; this integration needs it for diagnosis.
- */
-function runForSecurity(command, args) {
-  try {
-    return {
-      status: 0,
-      stdout: execFileSync(command, args, {
-        encoding: "utf8",
-        stdio: "pipe",
-        windowsHide: true,
-        timeout: 60_000,
-      }),
-      stderr: "",
-    };
-  } catch (error) {
-    const status = typeof error.status === "number" ? error.status : 1;
-    const stdout = typeof error.stdout === "string" ? error.stdout : "";
-    const stderr = typeof error.stderr === "string" ? error.stderr : "";
-    console.error(`[acl] ${command} exit ${status}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
-    return { status, stdout, stderr };
-  }
-}
-
 /** Firewall changes need administrator rights; a non-elevated run fails here. */
 function assertElevated() {
   const output = run("powershell.exe", [
@@ -152,19 +126,11 @@ try {
   const { ensureConfig } = await import("../dist/config.js").catch(() => {
     throw new Error("windows integration requires the compiled bridge: run `npm run build` first");
   });
-  const { windowsSecurity } = await import("../dist/platform/windows/security.js").catch(() => {
-    throw new Error("windows integration requires the compiled security module: run `npm run build` first");
-  });
-  const security = {
-    protectHome: (path) => windowsSecurity.protectHome(path, runForSecurity),
-    protectLogs: (homePath) => windowsSecurity.protectLogs(homePath, runForSecurity),
-    protectFile: (path) => windowsSecurity.protectFile(path, runForSecurity),
-  };
-  ensureConfig(home, process.env, security);
+  ensureConfig(home);
   assertCurrentUserOnlyAcl(join(home, "config.json"));
   // Repeated startup protection must be a read-only no-op: a standard user
   // cannot re-apply Set-Acl to an already-protected DACL (SeSecurityPrivilege).
-  ensureConfig(home, process.env, security);
+  ensureConfig(home);
   assertCurrentUserOnlyAcl(join(home, "config.json"));
 
   run("schtasks.exe", ["/Create", "/TN", taskName, "/SC", "DAILY", "/ST", "23:59", "/TR", "cmd.exe /d /c exit 0", "/F"]);

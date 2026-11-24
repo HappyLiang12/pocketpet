@@ -20,8 +20,7 @@ import {
   windowsTaskXmlBytes,
 } from "./builders.js";
 import { currentUserSid, windowsSecurity } from "./security.js";
-
-const POWERSHELL = "powershell.exe";
+import { POWERSHELL, powershellEnv } from "./powershell.js";
 
 /** `ERROR_CANCELLED` (1223) from a dismissed UAC prompt. */
 export const ELEVATION_CANCELLED = 1223;
@@ -55,7 +54,12 @@ export type WindowsDeps = {
 
 const defaultRun: CommandRunner = (command, args) => {
   try {
-    const stdout = execFileSync(command, args, { encoding: "utf8", stdio: "pipe", windowsHide: true });
+    const stdout = execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: "pipe",
+      windowsHide: true,
+      env: powershellEnv(),
+    });
     return { status: 0, stdout, stderr: "" };
   } catch (error) {
     const failed = error as { status?: number | null; stdout?: string | Buffer; stderr?: string | Buffer };
@@ -303,7 +307,7 @@ export function defaultElevatedRunner(script: string): Promise<CommandResult> {
     execFile(
       POWERSHELL,
       ["-NoProfile", "-NonInteractive", "-Command", wrapper],
-      { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024 },
+      { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, env: powershellEnv() },
       (error, stdout, stderr) => {
         if (!error) {
           resolve({ status: 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") });
