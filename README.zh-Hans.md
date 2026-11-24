@@ -32,15 +32,17 @@
 
 ## 要求
 
-PocketPet 支持 macOS 与 Windows 11 x64。Bridge、手机页面、Studio 与 token 模型在各平台一致；登录服务、`.local` 名称与配置保护按系统不同。
+PocketPet 支持 macOS、Windows 11 x64 与 Windows 10 22H2 x64。Bridge、手机页面、Studio 与 token 模型在各平台一致；登录服务、`.local` 名称与配置保护按系统不同。
 
 | 主机 | 支持 | Bridge、手机页面、Studio | Agent hooks | 登录服务 | `.local` | 配置保护 |
 | --- | --- | --- | --- | --- | --- | --- |
 | macOS（当前） | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | launchd LaunchAgent | 系统 Bonjour 与 `scutil` | 目录 0700、文件 0600 |
 | Windows 11 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
-| Windows 10 22H2 x64 | 仅兼容性；尽力支持，非官方支持（验收 NOT RUN） | 预期可用 | 预期可用 | 预期可用 | 预期可用 | 预期可用 |
+| Windows 10 22H2 x64 | 支持 | 是 | Claude Code；Qoder 已接线，真实 app 验收 NOT RUN | 登录时启动的当前用户 Task Scheduler 任务（隐藏、最低权限） | 随应用提供的 mDNS responder；bridge 启动时必须已有 PocketPet 防火墙规则（之后删除规则不会撤回已在运行的广播） | home、config、logs 与 launcher 的当前用户专属 NTFS ACL |
 | Windows on ARM | 未声明 | 未测试 | 未测试 | 未测试 | 未测试 | 未测试 |
 | Linux | 尽力支持 | 仅 bridge | 未测试 | 无 | 无 | 仅 POSIX mode bits；无 ACL 承诺 |
+
+Windows 10 22H2 x64 已由用户根据实机结果纳入支持：bridge、ACL、服务安装、防火墙与手机 IP 已验证；uninstall/reinstall、登录持久化、手机 `.local`、Qoder 真实 app 与官方 Windows 11 x64 实机验收仍为 NOT RUN，Windows CI 在 PR 上运行。见[验收记录](docs/acceptance/windows-support.md)。
 
 - Node.js >= 20.6。
 - 手机与运行 bridge 的电脑在同一 WiFi（不同网络可用 USB `adb reverse`）。
@@ -58,7 +60,7 @@ pocketpet up
 
 `pocketpet up` 会创建 `~/.pocketpet`、询问是否安装 hooks、询问是否开机启动 bridge，然后打印大 QR，并在运行 bridge 的电脑上打开 `http://127.0.0.1:<port>/setup` 设置页。
 
-### Windows 11 快速开始
+### Windows 快速开始
 
 在 PowerShell 中于 checkout 运行；不需要预先打开管理员终端，只有登录服务会触发一次 UAC：
 
@@ -158,9 +160,9 @@ adb reverse tcp:7788 tcp:7788
 
 ## 状态与平台范围
 
-当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation + Windows 11 x64 支持。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd（macOS）与 Task Scheduler（Windows）登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
+当前：M1 + onboarding + Qoder adapter（已包含；真实 app 验收 NOT RUN）+ UIUX foundation + Windows 11/10 支持。包含一键设置（`pocketpet up`）、loopback 设置页（Pair/Look/System）、launchd（macOS）与 Task Scheduler（Windows）登录服务、Claude Code 适配器、带 Live/Look/About 底部面板的 Studio Neutral 手机界面、主机默认外观与宠物及每部手机的本地覆盖、共享 Direct Canvas Studio、折叠/展开显示、Petdex 目录、USB fallback、English/繁體中文/简体中文界面和调试面板。
 
-Windows 11 x64 是官方 Windows 主机；Windows 10 22H2 仅兼容性，Windows on ARM 未测试且未声明，Linux 仅尽力支持且没有支持承诺。Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。设计见 `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`，真实机器验收见 `docs/acceptance/windows-support.md`。
+Windows 11 x64 与 Windows 10 22H2 x64 是支持的 Windows 主机；Windows on ARM 未测试且未声明，Linux 仅尽力支持且没有支持承诺。Qoder adapter 已包含；真实 app 验收为 NOT RUN。Agent 设置与更新界面不在本切片内；更新机制是另一份规格。Codex/OpenCode/Pi 适配器、宠物上传，以及把 `.local` 设为默认 QR 主机都是后续里程碑。设计见 `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`，真实机器验收见 `docs/acceptance/windows-support.md`。
 
 ## 疑难解答
 

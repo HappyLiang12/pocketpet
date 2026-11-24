@@ -1,10 +1,10 @@
 # Windows Support Acceptance Record
 
-Status: **NOT RUN**. This is the real-machine evidence template for the approved Windows 11 support design. Every gate below starts as `NOT RUN` and only becomes `PASS` when the named tester records the evidence. Do not infer a pass from unit tests, Playwright tests, CI, or code inspection.
+Status: **PARTIAL**. Windows 10 22H2 x64 real-machine evidence is recorded below; gates not named as passed remain `NOT RUN`. Do not infer a pass from unit tests, Playwright tests, CI, or code inspection.
 
 - Spec: `docs/superpowers/specs/2026-11-23-pocketpet-windows-support-design.md`
 - Plan: `docs/superpowers/plans/2026-11-23-pocketpet-windows-support.md`
-- Support claim: Windows 11 x64 only. Windows 10 22H2 x64 is compatibility-only and is not an official support claim. Windows on ARM and Linux are not claimed.
+- Support claim: Windows 11 x64 and Windows 10 22H2 x64 are supported. The user expanded the original Windows-11-only scope after the Windows 10 real-machine run; the original spec's Windows-10 exclusion is historical. Windows on ARM and Linux are not claimed.
 - Qoder: the adapter is included and wired, but the real-app hook gate remains `NOT RUN`; no row here may describe Qoder as verified.
 
 ## Evidence rules
@@ -54,11 +54,11 @@ Paste the JSON (with the built-in redaction) into the evidence block for each re
 | 4 | Firewall rules are inbound allow, Private-profile only, correct port/UDP 5353, scoped to Node, and the phone can reach the bridge | Windows 11 x64, Private network | NOT RUN | Probe `firewall` object, `Get-NetFirewallRule` output, phone screenshot |
 | 5 | Config protection: home/config/logs/launcher are current-user-only; another standard user cannot read `config.json` | Windows 11 x64 with a second standard user | NOT RUN | Probe `config` object, `icacls` output (redacted), second-user access-denied observation |
 | 6 | UAC cancel fallback; start-time firewall gating for `.local` after a rule is deleted; no false success | Windows 11 x64 | NOT RUN | `pocketpet up` output, service exit codes, probe/doctor output before and after restart, restored rule state |
-| 7 | Official Windows 11 x64 real-machine gate on Node 24 (the issue environment), including upgrade from a prior install | Windows 11 x64, Node 24 | NOT RUN | Full command log, probe JSON, installed versions |
+| 7 | Official Windows 11 x64 real-machine gate on Node 24 (the issue environment), including upgrade from a prior install | Windows 11 x64, Node 24 | NOT RUN | Post-merge user test; full command log, probe JSON, installed versions |
 | 8 | Qoder real-app hook observation: a real Qoder task drives the phone pet | Windows 11 x64 with Qoder desktop | NOT RUN | Qoder version, hook settings excerpt (no token), phone screen recording; wiring alone is not a pass |
-| 9 | macOS regression: existing unit/typecheck/build/E2E, final counts recorded | macOS current, Node 20+ | NOT RUN | Commands and counts in the sign-off block |
-| 10 | Windows CI matrix (unit, build, typecheck, E2E, integration smoke) | `windows-latest` CI runner | NOT RUN | CI run URL and job result; not a substitute for gates 1-8 |
-| 11 | Windows 10 22H2 x64 compatibility run (bridge, phone page, hooks; service/firewall/ACL best-effort) | Windows 10 22H2 x64 desktop | NOT RUN | Probe JSON, command log, explicit compatibility-only note |
+| 9 | macOS regression: existing unit/typecheck/build/E2E, final counts recorded | macOS current, Node 20+ | PASS | 483 unit tests, 33 Playwright tests, build, typecheck at `f507fb2` |
+| 10 | Windows CI matrix (unit, build, typecheck, E2E, integration smoke) | `windows-latest` CI runner | NOT RUN | Runs on the PR; CI run URL and job result; not a substitute for gates 1-8 |
+| 11 | Windows 10 22H2 x64 support evidence (bridge, phone IP, service install/status, firewall content; lifecycle gates not run) | Windows 10 22H2 x64 desktop | PARTIAL | Probe JSON, netsh content, phone connection, explicit remaining-gate list |
 | 12 | Linux / Windows on ARM | Not claimed | NOT RUN | Best-effort only; no service, `.local`, or ACL promise |
 
 Gates 1-8 and 11 are manual. Gate 9 is automated plus a manual macOS sanity check; gate 10 is automated. None of them may be marked `PASS` from a different gate's evidence.
@@ -237,7 +237,7 @@ Disabling the rule instead of deleting it is a diagnostic variant only: the adve
 - Reinstall is idempotent; no duplicate firewall rules or stale task action remain.
 - Health failure after task start keeps the task/rules/log for diagnosis and does not claim success.
 
-**Result:** NOT RUN
+**Result:** NOT RUN (post-merge user test on the Windows 11 x64 machine)
 
 **Evidence:**
 
@@ -272,40 +272,41 @@ These are regression evidence only. They do not turn any manual gate above into 
 
 | Producer | Command | Result |
 | --- | --- | --- |
-| macOS unit/typecheck/build/E2E | `npm test`, `npm run typecheck`, `npm run build`, `npx playwright test` | NOT RUN for this record |
-| Windows CI matrix | `.github/workflows/ci.yml` on `windows-latest` | NOT RUN for this record |
+| macOS unit/typecheck/build/E2E | `npm test`, `npm run typecheck`, `npm run build`, `npx playwright test` | PASS at `f507fb2`: 35 files / 483 unit tests, 33 Playwright tests, build and typecheck green |
+| Windows CI matrix | `.github/workflows/ci.yml` on `windows-latest` | NOT RUN yet; runs on the PR |
 
-Record exact counts and the run URL in the sign-off block when executed. The last known automated head before this documentation task was `5b8b5c4`: macOS 35 files / 480 unit tests, 33 Playwright tests, typecheck and build green; the Windows matrix had not been executed because the branch had not been pushed. That is history, not this record's evidence.
+Record exact counts and the run URL in the sign-off block when executed. The latest local automated evidence is `f507fb2`: macOS 35 files / 483 unit tests, 33 Playwright tests, build and typecheck green. The Windows matrix has not been executed yet; it is the PR CI producer.
 
-### 11. Windows 10 22H2 compatibility-only run
+### 11. Windows 10 22H2 x64 support evidence
 
 **Steps**
 
 1. Run the probe and `pocketpet up` on the available Windows 10 22H2 x64 desktop.
 2. Exercise the bridge, phone page, hooks, service install/status/uninstall, firewall, `.local`, and ACL as time permits.
-3. Record failures as failures. Do not patch production code to make this compatibility run pass.
+3. Record failures as failures. Do not patch production code to make this run pass.
 
 **PASS criteria**
 
-- This row records observed behavior only. It never changes the official support matrix.
-- Any failure is documented as compatibility-only residual risk. Promoting Windows 10 requires a new approved spec and acceptance record.
+- This row records the evidence behind the user-approved Windows 10 support expansion.
+- PASS is claimed only for the named observed checks; lifecycle, `.local`, Qoder, and Windows 11 gates stay separate and `NOT RUN`.
 
-**Result:** NOT RUN (partial compatibility evidence below; not a gate PASS)
+**Result:** PARTIAL — PASS for bridge/ACL/service install/firewall content/phone-over-IP; uninstall/reinstall, logon persistence, phone `.local`, Qoder real-app, and Windows 11 gate NOT RUN
 
 **Evidence:**
 
-Observed on the available Windows 10 desktop on 2026-11-24 across commits `8de5513`, `686bcb4`, and `86cb6e0`. This is compatibility-only evidence and does not promote Windows 10 or any official gate.
+Observed on the available Windows 10 desktop on 2026-11-24 across commits `8de5513`, `686bcb4`, `86cb6e0`, and `f507fb2`. The user approved Windows 10 22H2 x64 support after this evidence; the remaining gates are explicit residual risk.
 
 - Environment: Windows 10 Enterprise 22H2, 10.0.19045, x64; Windows PowerShell 5.1.19041.6456; Node v24.14.1; account non-admin (`Elevated=False`). The initial bridge/ACL run used a temporary home with network Public; the later service run used the real `%USERPROFILE%\.pocketpet` and the user approved changing `UberFi_5G` to Private.
 - Repeated-start bridge: a fresh temporary home was started twice with `node dist/cli.js up --no-hooks --no-service --no-open`. Both runs stayed alive and answered `/health` 200 with `localHostname: null`; no `SeSecurityPrivilege`/`could not protect` error. This is the repeated-start path that failed before the ACL idempotence fix.
 - ACL: home `(OI)(CI)(F)`, config `(F)`, and logs `(OI)(CI)(F)` each showed one non-inherited ACE for `HAPPY\<user>`; no `.tmp` files remained. Probe `config ACL` = PASS.
 - Service and network: after the PS 5.1 task-probe fix in `686bcb4`, `node dist/cli.js service install` was run from the normal `HAPPY\User` shell and exited 0 after one product UAC. The task was Running with `Principal.UserId=User` and the exported XML SID matched the current `HAPPY\User` SID; RunLevel Limited, LogonType Interactive. The bridge answered `/health` 200 with `localHostname: happy.local`.
 - Firewall: `Get-NetFirewallRule` returned no rule content for the non-admin token, so the probe reported `firewall` = NOT RUN with both names in `netshOnly`, not a false FAIL. Read-only `netsh` content showed TCP 7788 and UDP 5353 both Enabled/Inbound/Allow/Private, scoped to `C:\Program Files\nodejs\node.exe`.
-- Phone: established non-loopback connections from `192.168.0.105` to `192.168.0.101:7788` were observed. The phone page's clock/pet visual confirmation and whether it used IP or `.local` are still pending; `/health` `sessions` counts agent sessions, not phone clients.
+- Phone: the user confirmed the vivo page displayed the clock/pet over the IP URL; established non-loopback connections from `192.168.0.105` to `192.168.0.101:7788` were observed. Phone `.local` remains NOT RUN; `/health` `sessions` counts agent sessions, not phone clients.
+- 401 UX: the cleaned phone URL copied to another browser returns a token-free 401 HTML explanation and points to `/setup`; API calls remain plain 401. Verified at `f507fb2`.
 - Probe at `86cb6e0`: summary `PASS 4 / FAIL 0 / NOT RUN 3`.
   - PASS: `node` (v24.14.1, minimum v20.6.0), `config ACL`, `scheduled task` (Running), `loopback health` (200 without a token).
-  - NOT RUN: `host` (Windows 10 is compatibility-only), `firewall` (non-admin NetSecurity content unreadable; netsh shows both), and `mdns .local` (bridge advertises `happy.local`, but no direct multicast answer; no attribution from the system resolver).
-- Not run: uninstall/reinstall, Task Scheduler logon persistence after sign-out/reboot, phone visual/`.local` confirmation, Qoder real-app hook, official Windows 11 x64 gate, and the Windows CI matrix. This is not a PASS for Gate 11 or any official gate.
+  - NOT RUN: `host` (the gate is defined for Windows 11; this run is Windows 10), `firewall` (non-admin NetSecurity content unreadable; netsh shows both), and `mdns .local` (bridge advertises `happy.local`, but no direct multicast answer; no attribution from the system resolver).
+- Not run: uninstall/reinstall, Task Scheduler logon persistence after sign-out/reboot, phone `.local`, Qoder real-app hook, official Windows 11 x64 gate (post-merge user test), and the Windows CI matrix (runs on the PR). This is a partial support record, not a PASS for every Windows gate.
 
 ### 12. Linux and Windows on ARM
 
