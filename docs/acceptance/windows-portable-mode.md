@@ -21,7 +21,7 @@ A standard-user `pocketpet service install` also previously waited indefinitely 
 | 3 | Phone pairing works over IP when Windows permits it or over USB `adb reverse`; `.local` is not advertised | Windows 10/11 standard user, Android | NOT RUN | Phone screenshot/URL, `adb reverse` output, `/health` `localHostname: null` |
 | 4 | `pocketpet startup status` and `uninstall` are accurate; uninstall removes only the Startup entry and launcher and keeps config/logs | Windows 10/11 standard user | NOT RUN | Before/after file list, status output |
 | 5 | Portable Mode refuses while the Task Scheduler service is installed; `service install` no longer hangs and directs a no-admin user to Portable Mode | Windows 10/11 standard user with no admin token | NOT RUN | Service refusal, bounded timeout/error, no partial task/rule |
-| 6 | macOS unit/typecheck/build/E2E, Windows unit/build/typecheck/E2E, and the Windows integration smoke remain green | PR CI | NOT RUN | CI run URL and counts |
+| 6 | macOS unit/typecheck/build/E2E, Windows unit/build/typecheck/E2E, and the Windows integration smoke remain green | PR CI | PASS | CI run 45397955733: both jobs green; 499 unit tests, build/typecheck/E2E, Windows integration smoke |
 | 7 | Corporate standard-user real-machine run with the user's actual account | Corporate Windows machine | NOT RUN | Full command log, no UAC, startup after sign-in, phone IP/USB, redacted paths |
 
 ## Evidence rules
