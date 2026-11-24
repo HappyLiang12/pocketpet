@@ -45,6 +45,11 @@ param(
 
 $ErrorActionPreference = 'Continue'
 
+# A PowerShell 7 parent can leave a PSModulePath that Windows PowerShell 5.1
+# cannot use to autoload Get-ScheduledTask/Get-NetFirewallRule. Use the 5.1
+# built-in module path for this read-only probe as well.
+$env:PSModulePath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+
 # ---------------------------------------------------------------------------
 # Redaction: evidence may be pasted into the acceptance record. Hide the
 # profile path and account name, but never print config content or the token.

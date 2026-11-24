@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import type { CommandRunner, PrivatePaths } from "../types.js";
+import { POWERSHELL, powershellEnv } from "./powershell.js";
 
-const POWERSHELL = "powershell.exe";
 // Windows PowerShell 5.1 does not resolve the bare `[WindowsIdentity]` name;
 // the fully qualified .NET type resolves on every supported PowerShell host.
 const SID_SCRIPT = "([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value";
@@ -36,7 +36,12 @@ function toText(value: string | Buffer | undefined): string {
 
 const defaultRunner: CommandRunner = (command, args) => {
   try {
-    const stdout = execFileSync(command, args, { encoding: "utf8", stdio: "pipe", windowsHide: true });
+    const stdout = execFileSync(command, args, {
+      encoding: "utf8",
+      stdio: "pipe",
+      windowsHide: true,
+      env: powershellEnv(),
+    });
     return { status: 0, stdout, stderr: "" };
   } catch (error) {
     const failed = error as { status?: number | null; stdout?: string | Buffer; stderr?: string | Buffer };

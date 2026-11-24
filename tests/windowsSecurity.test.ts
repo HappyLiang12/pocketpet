@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandResult, CommandRunner } from "../src/platform/types.js";
 import { currentUserSid, WindowsSecurityError, windowsSecurity } from "../src/platform/windows/security.js";
+import { powershellEnv } from "../src/platform/windows/powershell.js";
 
 const SID = "S-1-5-21-42";
 // Windows PowerShell 5.1 cannot resolve the bare `[WindowsIdentity]` accelerator
@@ -27,6 +28,18 @@ function decode(call: PowerShellCall): string {
 }
 
 describe("Windows private paths", () => {
+  it("uses Windows PowerShell 5.1 modules even under a PowerShell 7 parent", () => {
+    const env = powershellEnv({
+      SystemRoot: "D:\\Windows",
+      PSModulePath: "C:\\Program Files\\PowerShell\\7\\Modules",
+    });
+    expect(env.PSModulePath).toBe("D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules");
+  });
+
+  it("falls back to C:\\Windows when SystemRoot is absent", () => {
+    expect(powershellEnv({}).PSModulePath).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules");
+  });
+
   it("replaces inheritance with one current-user ACE for a file", () => {
     const { run, calls } = sidRunner();
     windowsSecurity.protectFile("C:\\Users\\happy\\.pocketpet\\config.json", run);
